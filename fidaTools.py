@@ -3,6 +3,7 @@
 from scipy.io import netcdf
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 def get_data(file,vars=[]):
     try:
@@ -28,11 +29,9 @@ def get_dimensions(file,vars=[]):
     f.close()
     return d
 
-def plot_npa(runid):
+def plot_npa(dir):
 
-   dir=runid
-   if dir[-1] != '/': dir=dir+'/'
-   
+   runid=os.path.basename(os.path.normpath(dir))
    inputs=get_data(dir+runid+'_inputs.cdf')
  
    ##Get Grid
@@ -99,11 +98,10 @@ def plot_npa(runid):
    del npa_weight,energy,counts,flux,ipos
    del x_grid,y_grid,z_grid
 
-def plot_fida_weights(runid):
+def plot_fida_weights(dir):
    from matplotlib.widgets import Slider,RadioButtons
-   dir=runid
-   if dir[-1] != '/': dir=dir+'/'
    
+   runid=os.path.basename(os.path.normpath(dir))
    wght=get_data(dir+runid+'_fida_weight_function.cdf')
    energy=wght['energy']
    lam=wght['lambda']
