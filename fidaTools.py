@@ -4,6 +4,7 @@ from scipy.io import netcdf
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import argparse
 
 def get_data(file,vars=[]):
     try:
@@ -190,4 +191,19 @@ def plot_spectra(dir):
 
    plt.show()
 
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('dir',type=str,help='Result Directory')
+    parser.add_argument('-n','--npa',help='Plot NPA',action='store_true')
+    parser.add_argument('-s','--spectra',help='Plot Spectra',action='store_true')
+    parser.add_argument('-fw','--fida_weights',help='Plot FIDA weights',action='store_true')
+    args = parser.parse_args()
 
+    dir=args.dir
+
+    if args.npa: plot_npa(dir)
+    if args.spectra: plot_spectra(dir)
+    if args.fida_weights: plot_fida_weights(dir)
+
+if __name__=='__main__':
+   main()
