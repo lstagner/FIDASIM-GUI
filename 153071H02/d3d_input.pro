@@ -26,7 +26,7 @@ isource=5     		    ;; Beam source index (FIDASIM only simulates one NBI source)
 einj=81.3                 ;; [keV] If 0, get data from MDS+
 pinj=2.56                 ;; [MW] If 0, get data from MDS+
 
-diag=['NPA']	;; Name of the FIDA diag
+diag=['OBLIQUE','NPA']	;; Name of the FIDA diag
 
 gfile=''                ;; If empty, use MDS+; otherwise, filename
 equil='EFIT08'			;; MDS+ equilibrium runid
@@ -66,9 +66,9 @@ zdim2=70.			;; Maximum z value
 ;;--------------------------------------------------
 ;; Define number of Monte Carlo particles
 ;;--------------------------------------------------
-nr_fast=10000   			;; FIDA
-nr_ndmc=10000 			;; Beam emission
-nr_halo=10000	   		;; Halo contribution
+nr_fast=5000000   			;; FIDA
+nr_ndmc=50000 			;; Beam emission
+nr_halo=500000	   		;; Halo contribution
 
 ;;--------------------------------------------------
 ;; Calculation of the weight function
@@ -86,12 +86,12 @@ wavel_end_wght=663.   		;; Maximum wavelength
 ;; Simulation switches
 ;;-------------------------------------------------
 calc_npa=[0]   					;; (0 or 1) If 1 do a simulation for NPA
-calc_spec=[0]   ;; (0 or 1) If 1 then spectra are calculated
+calc_spec=[1]   ;; (0 or 1) If 1 then spectra are calculated
 calc_birth=[0]  ;; (0 or 1) If 1 then the birth profile is calculated
 f90brems=[0]    ;; (0 or 1) If 0 use the IDL bremstrahlung calculation
-calc_fida_wght=[0]   ;; (0 or 1) If 1 then weight functions are calculated
+calc_fida_wght=[1]   ;; (0 or 1) If 1 then weight functions are calculated
 calc_npa_wght=[1]    ;; (0 or 1) If 1 then weight functions are calculated
-load_neutrals=[1]    ;; (0 or 1) If 1 then the neutral density is loaded from an existing 
+load_neutrals=[0]    ;; (0 or 1) If 1 then the neutral density is loaded from an existing 
 load_fbm=[1]         ;; (0 or 1) If 1 then the fbm is loaded (over written by calc_spec or calc_npa) 
 ps=[0]          ;; (0 or 1) If 1 then make hard copy of plots
 

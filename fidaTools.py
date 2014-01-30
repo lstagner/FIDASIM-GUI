@@ -31,6 +31,7 @@ def get_dimensions(file,vars=[]):
 
 def plot_npa(dir):
 
+   if dir[-1] != '/': dir=dir+'/'
    runid=os.path.basename(os.path.normpath(dir))
    inputs=get_data(dir+runid+'_inputs.cdf')
  
@@ -101,6 +102,7 @@ def plot_npa(dir):
 def plot_fida_weights(dir):
    from matplotlib.widgets import Slider,RadioButtons
    
+   if dir[-1] != '/': dir=dir+'/'
    runid=os.path.basename(os.path.normpath(dir))
    wght=get_data(dir+runid+'_fida_weight_function.cdf')
    energy=wght['energy']
@@ -142,3 +144,4 @@ def plot_fida_weights(dir):
    sch.on_changed(update)
 
    plt.show()
+

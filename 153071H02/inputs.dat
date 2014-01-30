@@ -1,8 +1,8 @@
-# FIDASIM input file created: Fri Jan 24 18:55:50 2014 Version 2.1
+# FIDASIM input file created: Wed Jan 29 15:40:23 2014 Version 2.1
 153071         # shotnumber
  3.29000       # time
 153071H02
- NPA           # diagnostic
+ OBLIQUE           # diagnostic
  0             # calculate birth profile
  0             # calculate spectra
  0             # plot ps output
@@ -10,7 +10,7 @@
  1             # load NBI+HALO density
  1             # load FBM 
  0             # 0 reads IDL v.b.
- 0             # calculate fida wght function
+ 1             # calculate fida wght function
  1             # calculate npa wght function
 # weight function settings:
        50      # number energies
@@ -22,9 +22,9 @@
    651.00000       # wavel_start
    663.00000       # wavel_end
 # Monte Carlo settings:
-    10000      # number of FIDA mc particles
-    10000      # number of NBI mc particles
-    10000      # number of HALO mc particles
+  5000000      # number of FIDA mc particles
+    50000      # number of NBI mc particles
+   500000      # number of HALO mc particles
  6             # Impurity charge
 # discharge parameters:
   1            # B*Ip sign
