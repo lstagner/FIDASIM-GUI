@@ -100,7 +100,7 @@ def plot_npa(dir):
    del x_grid,y_grid,z_grid
 
 def plot_fida_weights(dir):
-   from matplotlib.widgets import Slider,RadioButtons
+   from matplotlib.widgets import Slider
    
    if dir[-1] != '/': dir=dir+'/'
    runid=os.path.basename(os.path.normpath(dir))
@@ -115,33 +115,79 @@ def plot_fida_weights(dir):
 
    ##Defaults
    wl=655.0
-   chan=0
-   print('Chan: '+str(chan))
-   print('Wavelength: '+str(lam[np.argmin(np.abs(lam-wl))])+' nm')
 
    fig, ax = plt.subplots()
-   plt.subplots_adjust(left=0.25, bottom=0.25)
-   c=ax.contourf(energy,pitch,wfunct[chan,:,:,np.argmin(np.abs(lam-wl))])
-   ax.set_xlabel('Energy [keV]')
-   ax.set_ylabel('Pitch')
+   plt.subplots_adjust(bottom=0.25)
+   def plotter(ch,wl2):
+       c=ax.contourf(energy,pitch,wfunct[ch,:,:,np.argmin(np.abs(lam-wl2))],30)
+       ax.set_xlabel('Energy [keV]')
+       ax.set_ylabel('Pitch')
+       plt.draw()
 
-   axwl  = plt.axes([0.25, 0.15, 0.65, 0.03])
-   axch = plt.axes([0.25, 0.1, 0.65, 0.03])
+   plotter(0,wl)
+
+   axwl  = plt.axes([0.2, 0.1, 0.65, 0.03])
+   axch = plt.axes([0.2, 0.05, 0.65, 0.03])
    swl = Slider(axwl, 'Lambda', min(lam), max(lam), valinit=wl)
-   sch = Slider(axch, 'Chan', 0, len(rad), valinit=0)
+   sch = Slider(axch, 'Chan', 0, len(rad)-1, valinit=0)
    def update(val):
        wl2=swl.val
        cn=int(round(sch.val))
        print('Chan: '+str(cn))
        print('Wavelength: '+str(lam[np.argmin(np.abs(lam-wl2))])+' nm')
        ax.cla()
-       ax.contourf(energy,pitch,wfunct[cn,:,:,np.argmin(np.abs(lam-wl2))],30)
-       ax.set_xlabel('Energy [keV]')
-       ax.set_ylabel('Pitch')
-       plt.draw()
+       plotter(cn,wl2)
 
    swl.on_changed(update)
    sch.on_changed(update)
 
    plt.show()
+
+def plot_spectra(dir):
+   from matplotlib.widgets import Slider
+
+   if dir[-1] != '/': dir=dir+'/'
+   runid=os.path.basename(os.path.normpath(dir))
+   spectra=get_data(dir+runid+'_spectra.cdf')
+   
+   lam=spectra['lambda']
+   brems=spectra['brems']
+   full=spectra['full']+brems
+   half=spectra['half']+brems
+   third=spectra['third']+brems
+   halo=spectra['halo']+brems
+   fida=spectra['fida']+brems
+
+   fig, ax = plt.subplots()
+   plt.subplots_adjust(bottom=0.25)
+   axch = plt.axes([0.2, 0.1, 0.65, 0.03])
+
+   def plotter(ch):
+       if sum(full[ch,:]) != 0:
+           ax.plot(lam,full[ch,:],label='Full')
+           ax.plot(lam,half[ch,:],label='Half')
+           ax.plot(lam,third[ch,:],label='Third')
+           ax.plot(lam,halo[ch,:],label='Halo')
+       if sum(fida[ch,:]) != 0:
+           ax.plot(lam,fida[ch,:],label='Fida')
+       ax.legend()
+       ax.set_yscale('log')
+       ax.set_xlabel('Wavelength [nm]')
+       ax.set_ylabel('Ph/(s*nm*sr*m^2)')
+       ax.set_title('Spectra')
+       plt.draw()
+
+   plotter(0)
+
+   sch = Slider(axch, 'Chan', 0, len(fida[:,0])-1, valinit=0)
+   def update(val):
+       cn=int(round(sch.val))
+       print('Chan: '+str(cn))
+       ax.cla()
+       plotter(cn)
+
+   sch.on_changed(update)
+
+   plt.show()
+
 
