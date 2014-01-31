@@ -191,12 +191,36 @@ def plot_spectra(dir):
 
    plt.show()
 
+def plot_neutrals(dir):
+   if dir[-1] != '/': dir=dir+'/'
+   runid=os.path.basename(os.path.normpath(dir))
+
+   inputs=get_data(dir+runid+'_inputs.cdf')
+ 
+   ##Get Grid
+   x_grid=inputs['x_grid']
+   y_grid=inputs['y_grid']
+   z_grid=inputs['z_grid']
+
+   ##Get Neutral Density
+   neut=get_data(dir+runid+'_neutrals.cdf')
+   dens=neut['fdens'].sum(0).sum(0)+neut['hdens'].sum(0).sum(0)+neut['tdens'].sum(0).sum(0)+neut['halodens'].sum(0).sum(0)
+
+   ##Plot
+   fig, ax = plt.subplots()
+   c=ax.contourf(x_grid[0,:,:],y_grid[0,:,:],dens,50);
+   ax.set_xlabel('X [cm]')
+   ax.set_ylabel('Y [cm]')
+   fig.colorbar(c)
+   plt.show()
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('dir',type=str,help='Result Directory')
     parser.add_argument('-n','--npa',help='Plot NPA',action='store_true')
     parser.add_argument('-s','--spectra',help='Plot Spectra',action='store_true')
     parser.add_argument('-fw','--fida_weights',help='Plot FIDA weights',action='store_true')
+    parser.add_argument('-ne','--neutrals',help='Plot Neutral Density',action='store_true')
     args = parser.parse_args()
 
     dir=args.dir
@@ -204,6 +228,7 @@ def main():
     if args.npa: plot_npa(dir)
     if args.spectra: plot_spectra(dir)
     if args.fida_weights: plot_fida_weights(dir)
+    if args.neutrals: plot_neutrals(dir)
 
 if __name__=='__main__':
    main()
