@@ -201,17 +201,40 @@ def plot_neutrals(dir):
    x_grid=inputs['x_grid']
    y_grid=inputs['y_grid']
    z_grid=inputs['z_grid']
+   del inputs
 
    ##Get Neutral Density
    neut=get_data(dir+runid+'_neutrals.cdf')
-   dens=neut['fdens'].sum(0).sum(0)+neut['hdens'].sum(0).sum(0)+neut['tdens'].sum(0).sum(0)+neut['halodens'].sum(0).sum(0)
+   full=neut['fdens']
+   half=neut['hdens']
+   third=neut['tdens']
+   halo=neut['halodens']
 
+   densxy = full.sum(0).sum(0)+half.sum(0).sum(0)+third.sum(0).sum(0)+halo.sum(0).sum(0)
+   densxz = full.sum(0).sum(1)+half.sum(0).sum(1)+third.sum(0).sum(1)+halo.sum(0).sum(1)
+   densyz = full.sum(0).sum(2)+half.sum(0).sum(2)+third.sum(0).sum(2)+halo.sum(0).sum(2)
+   
    ##Plot
-   fig, ax = plt.subplots()
-   c=ax.contourf(x_grid[0,:,:],y_grid[0,:,:],dens,50);
-   ax.set_xlabel('X [cm]')
-   ax.set_ylabel('Y [cm]')
-   fig.colorbar(c)
+   figxy, ax_xy = plt.subplots()
+   figxz, ax_xz = plt.subplots()
+   figyz, ax_yz = plt.subplots()
+
+   c_xy=ax_xy.contourf(x_grid[0,:,:],y_grid[0,:,:],densxy,50);
+   ax_xy.set_xlabel('X [cm]')
+   ax_xy.set_ylabel('Y [cm]')
+
+   c_xz=ax_xz.contourf(x_grid[:,0,:],z_grid[:,0,:],densxz,50);
+   ax_xz.set_xlabel('X [cm]')
+   ax_xz.set_ylabel('Z [cm]')
+
+   c_yz=ax_yz.contourf(y_grid[:,:,0],z_grid[:,:,0],densyz,50);
+   ax_yz.set_xlabel('Y [cm]')
+   ax_yz.set_ylabel('Z [cm]')
+
+   figxy.colorbar(c_xy)
+   figxz.colorbar(c_xz)
+   figyz.colorbar(c_yz)
+
    plt.show()
 
 def main():
