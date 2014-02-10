@@ -106,7 +106,7 @@ class spectra:
             fig.clf()
             ax=fig.add_subplot(111)
             ax.plot(ch,intens)
-            ax.set_title('Intensity vs. Channel')
+            ax.set_title('FIDA Intensity vs. Channel')
             ax.set_ylabel('Ph/(s*sr*m^2)')
             ax.set_xlabel('Channel Number')
             ax.set_yscale('log')
@@ -191,7 +191,61 @@ class npa:
 class weights:
 
     def __init__(self,dir):
-        self.x=0
+        runid=os.path.basename(os.path.normpath(dir))
+        self._has_npa_wght=os.path.isfile(dir+runid+'_npa_weight_function.cdf')
+        self._has_fida_wght=os.path.isfile(dir+runid+'_fida_weight_function.cdf')
+
+        if self._has_fida_wght:
+            fida=read_ncdf(dir+runid+'_fida_weight_function.cdf')
+            self.f_energy=fida['energy']
+            self.f_pitch=fida['pitch']
+            self.lam=fida['lambda']
+            self.dlam=np.abs(self.lam[1]-self.lam[0])
+            self.wl_max=np.max(self.lam)
+            self.wl_min=np.min(self.lam)
+            self.f_rad=fida['radius']
+            self.f_wght=fida['wfunct']
+            self.f_chan=len(self.f_rad)
+            self.fida_chans=dict(('Channel '+str(i+1),i) for i in range(0,self.f_chan))
+
+        if self._has_npa_wght:
+            npa=read_ncdf(dir+runid+'_npa_weight_function.cdf')
+            self.n_energy=npa['energy']
+            self.n_pitch=npa['pitch']
+            self.n_wght=npa['wfunct']
+            self.n_rad=npa['radius']
+            self.n_chan=len(self.n_rad)
+            self.npa_chans=dict(('Channel '+str(i+1),i) for i in range(0,self.n_chan))
+ 
+        self.lam_val=DoubleVar(value=655.0)
+        self.fida_chan=StringVar(value='Channel 1')
+        self.npa_chan=StringVar(value='Channel 1')
+        
+    def plot_npa_weights(self,fig,canvas):
+        if self._has_npa_wght:
+            ch=self.npa_chans[self.npa_chan.get()]
+            fig.clf()
+            ax=fig.add_subplot(111)
+            c=ax.contourf(self.n_energy,self.n_pitch,self.n_wght[ch,:,:],50)
+            fig.colorbar(c)
+            ax.set_title('NPA Weight')
+            ax.set_ylabel('Pitch')
+            ax.set_xlabel('Energy [keV]')
+            canvas.show()
+
+    def plot_fida_weights(self,fig,canvas):
+        if self._has_fida_wght:
+            ch=self.fida_chans[self.fida_chan.get()]
+            wl=float(self.lam_val.get())
+            ind=np.argmin(np.abs(self.lam-wl))
+            fig.clf()
+            ax=fig.add_subplot(111)
+            c=ax.contourf(self.f_energy,self.f_pitch,self.f_wght[ch,:,:,ind],30)
+            fig.colorbar(c)
+            ax.set_xlabel('Energy [keV]')
+            ax.set_ylabel('Pitch')
+            ax.set_title('FIDA Weight')
+            canvas.show()
 
 class neutrals:
 
@@ -442,8 +496,20 @@ class viewer:
             command=(lambda: self.neut.plot_neutrals(self.fig,self.canvas))).pack(expand=Y,fill=BOTH)
 
         #Weights Frame
-        ttk.Button(self.weights_frame,text='Plot FIDA Weights').pack(side=TOP,expand=Y,fill=BOTH)
-        ttk.Button(self.weights_frame,text='Plot NPA Weights').pack(side=TOP,expand=Y,fill=BOTH)
+        ttk.Combobox(self.weights_frame,textvariable=self.wght.fida_chan,\
+            values=tuple(self.wght.fida_chans.keys())).pack()
+
+        Scale(self.weights_frame,orient=HORIZONTAL,length=200,\
+            from_=self.wght.wl_min,to=self.wght.wl_max,resolution=self.wght.dlam,variable=self.wght.lam_val).pack()
+
+        ttk.Button(self.weights_frame,text='Plot FIDA Weights',\
+            command=(lambda: self.wght.plot_fida_weights(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
+
+        ttk.Combobox(self.weights_frame,textvariable=self.wght.npa_chan,\
+            values=tuple(self.wght.npa_chans.keys())).pack()
+
+        ttk.Button(self.weights_frame,text='Plot NPA Weights',\
+            command=(lambda: self.wght.plot_npa_weights(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
   
 
     def load_dir(self):
@@ -456,7 +522,8 @@ class viewer:
         self.spec = spectra(self.dir)
         self.npa = npa(self.dir)
         self.neut = neutrals(self.dir)
- 
+        self.wght = weights(self.dir)
+
 if __name__=='__main__':
     root=Tk()
     viewer(root)
