@@ -14,6 +14,26 @@ from tkFileDialog import askdirectory
 import ttk
 
 def read_ncdf(file,vars=[]):
+    """ Reads a netCDF file and returns a dict with its variables
+    
+    Parameters
+    ----------
+    file : string
+        The netCDF file to be read
+    vars : string list, optional
+        List of variables to be read from file
+
+    Returns
+    -------
+    d : A python dict containing the files variables
+
+    Examples
+    --------
+    >>> d=read_ncdf('test.cdf')
+    >>> d1=read_ncdf('test.cdf',vars=['var1'])
+    >>> d2=read_ncdf('test.cdf',vars=['var1','var2'])
+
+    """
     try:
         f=netcdf.netcdf_file(file,'r')
     except IOError:
@@ -26,7 +46,7 @@ def read_ncdf(file,vars=[]):
     return d
 
 class spectra:
-
+    """ Spectra object that contains plot methods and parameters"""
     def __init__(self,dir):
         runid=os.path.basename(os.path.normpath(dir))
         self.has_spectra=os.path.isfile(dir+runid+'_spectra.cdf')
@@ -114,7 +134,7 @@ class spectra:
         else: print('SPECTRA: No file')
 
 class npa:
-
+    """ NPA object that contains plot methods and parameters"""
     def __init__(self,dir):
         runid=os.path.basename(os.path.normpath(dir))
 
@@ -189,7 +209,7 @@ class npa:
         else: print('NPA: No file')
 
 class weights:
-
+    """ Weights object that contains plot methods and parameters"""
     def __init__(self,dir):
         runid=os.path.basename(os.path.normpath(dir))
         self._has_npa_wght=os.path.isfile(dir+runid+'_npa_weight_function.cdf')
@@ -248,7 +268,7 @@ class weights:
             canvas.show()
 
 class neutrals:
-
+    """ Neutrals object that contains plot methods and parameters"""
     def __init__(self,dir):
         runid=os.path.basename(os.path.normpath(dir))
         self._has_neut=os.path.isfile(dir+runid+'_neutrals.cdf')
@@ -413,7 +433,7 @@ class neutrals:
                 canvas.show()
                 
 class viewer:
-
+    """Class that contains FIDAsim result viewer window"""
     def __init__(self,parent):
 
         self.load_dir()
