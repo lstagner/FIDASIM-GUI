@@ -14,7 +14,7 @@ from tkFileDialog import askdirectory
 import ttk
 
 def read_ncdf(file,vars=[]):
-    """ Reads a netCDF file and returns a dict with its variables
+    """ Reads a netCDF 3 file and returns a dict with its variables
     
     Parameters
     ----------
@@ -35,7 +35,7 @@ def read_ncdf(file,vars=[]):
 
     """
     try:
-        f=netcdf.netcdf_file(file,'r')
+        f=netcdf.netcdf_file(file,'r',mmap=False)
     except IOError:
         print('Error: Cannot open file'+file)
         return 0
@@ -49,9 +49,9 @@ class spectra:
     """ Spectra object that contains plot methods and parameters"""
     def __init__(self,dir):
         runid=os.path.basename(os.path.normpath(dir))
-        self.has_spectra=os.path.isfile(dir+runid+'_spectra.cdf')
+        self._has_spectra=os.path.isfile(dir+runid+'_spectra.cdf')
 
-        if self.has_spectra:
+        if self._has_spectra:
             spec = read_ncdf(dir+runid+'_spectra.cdf')
             self.lam = spec['lambda']
             self.brems = spec['brems']
@@ -79,7 +79,7 @@ class spectra:
                 self.fida_on.set(True)
 
     def plot_spectra(self,fig,canvas):
-        if self.has_spectra:
+        if self._has_spectra:
             ch=self.channels[self.chan.get()]
             lam=self.lam
             if self.brems_on.get():
@@ -117,7 +117,7 @@ class spectra:
         else: print('SPECTRA: No file')
 
     def plot_intensity(self,fig,canvas):
-        if self.has_spectra:
+        if self._has_spectra:
             w1 = self.lam >= self.wl_min
             w2 = self.lam <= self.wl_max
             w=np.logical_and(w1,w2)
@@ -212,11 +212,11 @@ class weights:
     """ Weights object that contains plot methods and parameters"""
     def __init__(self,dir):
         runid=os.path.basename(os.path.normpath(dir))
-        self._has_npa_wght=os.path.isfile(dir+runid+'_npa_weight_function.cdf')
-        self._has_fida_wght=os.path.isfile(dir+runid+'_fida_weight_function.cdf')
+        self._has_npa_wght=os.path.isfile(dir+runid+'_npa_weights.cdf')
+        self._has_fida_wght=os.path.isfile(dir+runid+'_fida_weights.cdf')
 
         if self._has_fida_wght:
-            fida=read_ncdf(dir+runid+'_fida_weight_function.cdf')
+            fida=read_ncdf(dir+runid+'_fida_weights.cdf')
             self.f_energy=fida['energy']
             self.f_pitch=fida['pitch']
             self.lam=fida['lambda']
@@ -229,7 +229,7 @@ class weights:
             self.fida_chans=dict(('Channel '+str(i+1),i) for i in range(0,self.f_chan))
 
         if self._has_npa_wght:
-            npa=read_ncdf(dir+runid+'_npa_weight_function.cdf')
+            npa=read_ncdf(dir+runid+'_npa_weights.cdf')
             self.n_energy=npa['energy']
             self.n_pitch=npa['pitch']
             self.n_wght=npa['wfunct']
@@ -468,29 +468,31 @@ class viewer:
         self.canvas._tkcanvas.pack(side=TOP,expand=Y,fill=BOTH)      
 
         #Spectra Frame
-        ttk.Combobox(self.spectra_frame,textvariable=self.spec.chan,\
-            values=tuple(self.spec.channels.keys())).pack()
-        ttk.Checkbutton(self.spectra_frame,text='Hide NBI', variable=self.spec.nbi_on,\
-            onvalue=False,offvalue=True).pack()
-        ttk.Checkbutton(self.spectra_frame,text='Hide FIDA', variable=self.spec.fida_on,\
-            onvalue=False,offvalue=True).pack()
-        ttk.Checkbutton(self.spectra_frame,text='No Bremsstrahlung', variable=self.spec.brems_on,\
-            onvalue=False,offvalue=True).pack()
-        ttk.Checkbutton(self.spectra_frame,text='Hide Legend', variable=self.spec.legend_on,\
-            onvalue=False,offvalue=True).pack()
+        if self.spec._has_spectra:
+	        ttk.Combobox(self.spectra_frame,textvariable=self.spec.chan,\
+    	        values=tuple(self.spec.channels.keys())).pack()
+        	ttk.Checkbutton(self.spectra_frame,text='Hide NBI', variable=self.spec.nbi_on,\
+            	onvalue=False,offvalue=True).pack()
+        	ttk.Checkbutton(self.spectra_frame,text='Hide FIDA', variable=self.spec.fida_on,\
+            	onvalue=False,offvalue=True).pack()
+        	ttk.Checkbutton(self.spectra_frame,text='No Bremsstrahlung', variable=self.spec.brems_on,\
+            	onvalue=False,offvalue=True).pack()
+        	ttk.Checkbutton(self.spectra_frame,text='Hide Legend', variable=self.spec.legend_on,\
+            	onvalue=False,offvalue=True).pack()
 
-        ttk.Button(self.spectra_frame,text='Plot Spectra',\
-            command=(lambda: self.spec.plot_spectra(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
-        ttk.Button(self.spectra_frame,text='Plot Intensity',\
-            command=(lambda: self.spec.plot_intensity(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
+        	ttk.Button(self.spectra_frame,text='Plot Spectra',\
+            	command=(lambda: self.spec.plot_spectra(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
+        	ttk.Button(self.spectra_frame,text='Plot Intensity',\
+            	command=(lambda: self.spec.plot_intensity(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
 
         #NPA Frame
-        ttk.Combobox(self.npa_frame,textvariable=self.npa.chan,\
-            values=tuple(self.npa.channels.keys())).pack()
-        ttk.Button(self.npa_frame,text='Plot Neutral Birth',\
-            command=(lambda: self.npa.plot_neutral_birth(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
-        ttk.Button(self.npa_frame,text='Plot Flux',\
-            command=(lambda: self.npa.plot_flux(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
+        if self.npa._has_npa:
+        	ttk.Combobox(self.npa_frame,textvariable=self.npa.chan,\
+            	values=tuple(self.npa.channels.keys())).pack()
+        	ttk.Button(self.npa_frame,text='Plot Neutral Birth',\
+            	command=(lambda: self.npa.plot_neutral_birth(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
+        	ttk.Button(self.npa_frame,text='Plot Flux',\
+            	command=(lambda: self.npa.plot_flux(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
 
         #Neutrals Frame
         ttk.Radiobutton(self.neutrals_frame,text='Density vs X',variable=self.neut.plot_type,value='X').pack()
@@ -516,20 +518,22 @@ class viewer:
             command=(lambda: self.neut.plot_neutrals(self.fig,self.canvas))).pack(expand=Y,fill=BOTH)
 
         #Weights Frame
-        ttk.Combobox(self.weights_frame,textvariable=self.wght.fida_chan,\
-            values=tuple(self.wght.fida_chans.keys())).pack()
+        if self.wght._has_fida_wght:
+        	ttk.Combobox(self.weights_frame,textvariable=self.wght.fida_chan,\
+            	values=tuple(self.wght.fida_chans.keys())).pack()
 
-        Scale(self.weights_frame,orient=HORIZONTAL,length=200,\
-            from_=self.wght.wl_min,to=self.wght.wl_max,resolution=self.wght.dlam,variable=self.wght.lam_val).pack()
+        	Scale(self.weights_frame,orient=HORIZONTAL,length=200,\
+            	from_=self.wght.wl_min,to=self.wght.wl_max,resolution=self.wght.dlam,variable=self.wght.lam_val).pack()
 
-        ttk.Button(self.weights_frame,text='Plot FIDA Weights',\
-            command=(lambda: self.wght.plot_fida_weights(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
+        	ttk.Button(self.weights_frame,text='Plot FIDA Weights',\
+            	command=(lambda: self.wght.plot_fida_weights(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
 
-        ttk.Combobox(self.weights_frame,textvariable=self.wght.npa_chan,\
-            values=tuple(self.wght.npa_chans.keys())).pack()
+        if self.wght._has_npa_wght:
+        	ttk.Combobox(self.weights_frame,textvariable=self.wght.npa_chan,\
+            	values=tuple(self.wght.npa_chans.keys())).pack()
 
-        ttk.Button(self.weights_frame,text='Plot NPA Weights',\
-            command=(lambda: self.wght.plot_npa_weights(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
+        	ttk.Button(self.weights_frame,text='Plot NPA Weights',\
+            	command=(lambda: self.wght.plot_npa_weights(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
   
 
     def load_dir(self):
