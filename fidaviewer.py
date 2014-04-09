@@ -2,6 +2,7 @@
 
 import sys
 import os
+import glob
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
@@ -48,11 +49,9 @@ def read_ncdf(file,vars=[]):
 class spectra:
     """ Spectra object that contains plot methods and parameters"""
     def __init__(self,dir):
-        runid=os.path.basename(os.path.normpath(dir))
-        self._has_spectra=os.path.isfile(dir+runid+'_spectra.cdf')
-
+        self._has_spectra = True if glob.glob(dir+'*_spectra.cdf') else False 
         if self._has_spectra:
-            spec = read_ncdf(dir+runid+'_spectra.cdf')
+            spec = read_ncdf(glob.glob(dir+'*_spectra.cdf')[0])
             self.lam = spec['lambda']
             self.brems = spec['brems']
             self.fida = spec['fida']
@@ -136,29 +135,27 @@ class spectra:
 class npa:
     """ NPA object that contains plot methods and parameters"""
     def __init__(self,dir):
-        runid=os.path.basename(os.path.normpath(dir))
-
-        self._has_npa=os.path.isfile(dir+runid+'_npa.cdf')
-        self._has_wght=os.path.isfile(dir+runid+'_npa_weight_function.cdf')
-        self._has_neut=os.path.isfile(dir+runid+'_neutrals.cdf')
-        self._has_geo=os.path.isfile(dir+runid+'_inputs.cdf')
+        self._has_npa= True if glob.glob(dir+'*_npa.cdf') else False
+        self._has_wght= True if glob.glob(dir+'*_npa_weights.cdf') else False
+        self._has_neut= True if glob.glob(dir+'*_neutrals.cdf') else False
+        self._has_geo= True if glob.glob(dir+'*_inputs.cdf') else False
 
         if self._has_npa:
-            npa = read_ncdf(dir+runid+'_npa.cdf')
+            npa = read_ncdf(glob.glob(dir+'*_npa.cdf')[0])
             self.npa_energy=npa['energy']
             self.npa_flux=npa['flux']
             self.ipos=npa['ipos']
             self.counts=npa['counts']
         if self._has_wght:
-            wght = read_ncdf(dir+runid+'_npa_weight_function.cdf')
+            wght = read_ncdf(glob.glob(dir+'*_npa_weights.cdf')[0])
             self.w_energy=wght['energy']
             self.w_flux=wght['flux']
         if self._has_neut:
-            neut = read_ncdf(dir+runid+'_neutrals.cdf')
+            neut = read_ncdf(glob.glob(dir+'*_neutrals.cdf')[0])
             self.dens=neut['fdens'].sum(0).sum(0)+neut['hdens'].sum(0).sum(0)+\
                       neut['tdens'].sum(0).sum(0)+neut['halodens'].sum(0).sum(0)
         if self._has_geo:
-            geo = read_ncdf(dir+runid+'_inputs.cdf',vars=['x_grid','y_grid','xlos','ylos','xlens','ylens','chan_id'])
+            geo = read_ncdf(glob.glob(dir+'*_inputs.cdf')[0],vars=['x_grid','y_grid','xlos','ylos','xlens','ylens','chan_id'])
             self.x_grid=geo['x_grid']
             self.y_grid=geo['y_grid']
             chan_id=geo['chan_id']
@@ -169,7 +166,7 @@ class npa:
             self.ylens=geo['ylens'][w]
 
         if (self._has_npa or self._has_wght):
-            self.channels=dict(('Channel '+str(i+1),i) for i in range(0,len(self.npa_flux[:,0])))
+            self.channels=dict(('Channel '+str(i+1),i) for i in range(0,3))
         
         self.chan=StringVar(value='Channel 1')
 
@@ -211,12 +208,11 @@ class npa:
 class weights:
     """ Weights object that contains plot methods and parameters"""
     def __init__(self,dir):
-        runid=os.path.basename(os.path.normpath(dir))
-        self._has_npa_wght=os.path.isfile(dir+runid+'_npa_weights.cdf')
-        self._has_fida_wght=os.path.isfile(dir+runid+'_fida_weights.cdf')
+        self._has_npa_wght= True if glob.glob(dir+'*_npa_weights.cdf') else False
+        self._has_fida_wght= True if glob.glob(dir+'*_fida_weights.cdf') else False
 
         if self._has_fida_wght:
-            fida=read_ncdf(dir+runid+'_fida_weights.cdf')
+            fida=read_ncdf(glob.glob(dir+'*_fida_weights.cdf')[0])
             self.f_energy=fida['energy']
             self.f_pitch=fida['pitch']
             self.lam=fida['lambda']
@@ -229,7 +225,7 @@ class weights:
             self.fida_chans=dict(('Channel '+str(i+1),i) for i in range(0,self.f_chan))
 
         if self._has_npa_wght:
-            npa=read_ncdf(dir+runid+'_npa_weights.cdf')
+            npa=read_ncdf(glob.glob(dir+'*_npa_weights.cdf')[0])
             self.n_energy=npa['energy']
             self.n_pitch=npa['pitch']
             self.n_wght=npa['wfunct']
@@ -270,13 +266,12 @@ class weights:
 class neutrals:
     """ Neutrals object that contains plot methods and parameters"""
     def __init__(self,dir):
-        runid=os.path.basename(os.path.normpath(dir))
-        self._has_neut=os.path.isfile(dir+runid+'_neutrals.cdf')
-        self._has_geo=os.path.isfile(dir+runid+'_inputs.cdf')
+        self._has_neut= True if glob.glob(dir+'*_neutrals.cdf') else False
+        self._has_geo= True if glob.glob(dir+'*_inputs.cdf') else False
       
         if self._has_neut and self._has_geo:
-            neut=read_ncdf(dir+runid+'_neutrals.cdf')
-            geo=read_ncdf(dir+runid+'_inputs.cdf',vars=['x_grid','y_grid','z_grid','u_grid','v_grid','w_grid'])
+            neut=read_ncdf(glob.glob(dir+'*_neutrals.cdf')[0])
+            geo=read_ncdf(glob.glob(dir+'*_inputs.cdf')[0],vars=['x_grid','y_grid','z_grid','u_grid','v_grid','w_grid'])
             self.fdens=neut['fdens'].sum(0)
             self.hdens=neut['hdens'].sum(0)
             self.tdens=neut['tdens'].sum(0)
@@ -540,8 +535,6 @@ class viewer:
         self.dir = askdirectory()
         if self.dir == '': self.dir=os.getcwd()
         if self.dir[-1] != '/': self.dir+='/'
-
-        self.runid = os.path.basename(os.path.normpath(self.dir))
 
         self.spec = spectra(self.dir)
         self.npa = npa(self.dir)
