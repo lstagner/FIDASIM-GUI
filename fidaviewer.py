@@ -6,7 +6,7 @@ import glob
 #import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
-from scipy.io import netcdf
+#from scipy.io import netcdf
 import numpy as np
 import tkinter as tk
 from tkinter.filedialog import askdirectory
@@ -14,38 +14,43 @@ from tkinter.filedialog import askdirectory
 from tkinter import ttk
 import h5py
 
+"""
+Todo
+----
+* use f90nml python package to parse the fortran namelist file and find what was and wasn't calculated
+"""
 
-def read_ncdf(file,vars=[]):
-    """ Reads a netCDF 3 file and returns a dict with its variables
-
-    Parameters
-    ----------
-    file : string
-        The netCDF file to be read
-    vars : string list, optional
-        List of variables to be read from file
-
-    Returns
-    -------
-    d : A python dict containing the files variables
-
-    Examples
-    --------
-    >>> d=read_ncdf('test.cdf')
-    >>> d1=read_ncdf('test.cdf',vars=['var1'])
-    >>> d2=read_ncdf('test.cdf',vars=['var1','var2'])
-
-    """
-    try:
-        f=netcdf.netcdf_file(file,'r',mmap=False)
-    except IOError:
-        print('Error: Cannot open file'+file)
-        return 0
-
-    if vars == []: vars=f.variables.keys()
-    d=dict((v,f.variables[v].data) for v in vars)
-    f.close()
-    return d
+#def read_ncdf(file,vars=[]):
+#    """ Reads a netCDF 3 file and returns a dict with its variables
+#
+#    Parameters
+#    ----------
+#    file : string
+#        The netCDF file to be read
+#    vars : string list, optional
+#        List of variables to be read from file
+#
+#    Returns
+#    -------
+#    d : A python dict containing the files variables
+#
+#    Examples
+#    --------
+#    >>> d=read_ncdf('test.cdf')
+#    >>> d1=read_ncdf('test.cdf',vars=['var1'])
+#    >>> d2=read_ncdf('test.cdf',vars=['var1','var2'])
+#
+#    """
+#    try:
+#        f=netcdf.netcdf_file(file,'r',mmap=False)
+#    except IOError:
+#        print('Error: Cannot open file'+file)
+#        return 0
+#
+#    if vars == []: vars=f.variables.keys()
+#    d=dict((v,f.variables[v].data) for v in vars)
+#    f.close()
+#    return d
 
 def load_dict_from_hdf5(filename):
     """
@@ -71,13 +76,18 @@ def recursively_load_dict_contents_from_group(h5file, path):
 class Spectra:
     """ Spectra object that contains plot methods and parameters"""
     def __init__(self,dir):
-        self._has_spectra = True if glob.glob(dir+'*_spectra.cdf') else False
+        self._has_spectra = True if glob.glob(dir+'*_spectra.h5') else False
+        print(self._has_spectra)
         if self._has_spectra:
-            spec = read_ncdf(glob.glob(dir+'*_spectra.cdf')[0])
+            spec = load_dict_from_hdf5(glob.glob(dir+'*_spectra.h5')[0])
             self.lam = spec['lambda']
-            self.brems = spec['brems']
-            self.fida = spec['fida']
-            self.full = spec['full']
+            if 'brems' in spec:
+                self.brems = spec['brems']
+            if 'fida' in spec:
+                self.fida = spec['fida']
+            if 'full' in spec:
+                self.full = spec['full']
+            if
             self.half = spec['half']
             self.third = spec['third']
             self.halo = spec['halo']
@@ -163,21 +173,21 @@ class NPA:
         self._has_geo= True if glob.glob(dir+'*_inputs.cdf') else False
 
         if self._has_npa:
-            npa = read_ncdf(glob.glob(dir+'*_npa.cdf')[0])
+            npa = load_dict_from_hdf5(glob.glob(dir+'*_npa.cdf')[0])
             self.npa_energy=npa['energy']
             self.npa_flux=npa['flux']
             self.ipos=npa['ipos']
             self.counts=npa['counts']
         if self._has_wght:
-            wght = read_ncdf(glob.glob(dir+'*_npa_weights.cdf')[0])
+            wght = load_dict_from_hdf5(glob.glob(dir+'*_npa_weights.cdf')[0])
             self.w_energy=wght['energy']
             self.w_flux=wght['flux']
         if self._has_neut:
-            neut = read_ncdf(glob.glob(dir+'*_neutrals.cdf')[0])
+            neut = load_dict_from_hdf5(glob.glob(dir+'*_neutrals.cdf')[0])
             self.dens=neut['fdens'].sum(0).sum(0)+neut['hdens'].sum(0).sum(0)+\
                       neut['tdens'].sum(0).sum(0)+neut['halodens'].sum(0).sum(0)
         if self._has_geo:
-            geo = read_ncdf(glob.glob(dir+'*_inputs.cdf')[0],vars=['x_grid','y_grid','xlos','ylos','xlens','ylens','chan_id'])
+            geo = load_dict_from_hdf5(glob.glob(dir+'*_inputs.cdf')[0],vars=['x_grid','y_grid','xlos','ylos','xlens','ylens','chan_id'])
             self.x_grid=geo['x_grid']
             self.y_grid=geo['y_grid']
             chan_id=geo['chan_id']
@@ -234,7 +244,7 @@ class Weights:
         self._has_fida_wght= True if glob.glob(dir+'*_fida_weights.cdf') else False
 
         if self._has_fida_wght:
-            fida=read_ncdf(glob.glob(dir+'*_fida_weights.cdf')[0])
+            fida=load_dict_from_hdf5(glob.glob(dir+'*_fida_weights.cdf')[0])
             self.f_energy=fida['energy']
             self.f_pitch=fida['pitch']
             self.lam=fida['lambda']
@@ -247,7 +257,7 @@ class Weights:
             self.fida_chans=dict(('Channel '+str(i+1),i) for i in range(0,self.f_chan))
 
         if self._has_npa_wght:
-            npa=read_ncdf(glob.glob(dir+'*_npa_weights.cdf')[0])
+            npa=load_dict_from_hdf5(glob.glob(dir+'*_npa_weights.cdf')[0])
             self.n_energy=npa['energy']
             self.n_pitch=npa['pitch']
             self.n_wght=npa['wfunct']
@@ -288,12 +298,12 @@ class Weights:
 class Neutrals:
     """ Neutrals object that contains plot methods and parameters"""
     def __init__(self,dir):
-        self._has_neut= True if glob.glob(dir+'*_neutrals.cdf') else False
-        self._has_geo= True if glob.glob(dir+'*_inputs.cdf') else False
+        self._has_neut= True if glob.glob(dir+'*_neutrals.h5') else False
+        self._has_geo= True if glob.glob(dir+'*_inputs.h5') else False
 
         if self._has_neut and self._has_geo:
-            neut=read_ncdf(glob.glob(dir+'*_neutrals.cdf')[0])
-            geo=read_ncdf(glob.glob(dir+'*_inputs.cdf')[0],vars=['x_grid','y_grid','z_grid','u_grid','v_grid','w_grid'])
+            neut=load_dict_from_hdf5(glob.glob(dir+'*_neutrals.h5')[0])
+            geo=load_dict_from_hdf5(glob.glob(dir+'*_inputs.h5')[0],vars=['x_grid','y_grid','z_grid','u_grid','v_grid','w_grid'])
             self.fdens=neut['fdens'].sum(0)
             self.hdens=neut['hdens'].sum(0)
             self.tdens=neut['tdens'].sum(0)
