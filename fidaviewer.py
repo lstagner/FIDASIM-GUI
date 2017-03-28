@@ -3,7 +3,7 @@
 import sys
 import os
 import glob
-import matplotlib
+#import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
 from scipy.io import netcdf
@@ -12,12 +12,12 @@ import numpy as np
 
 import tkinter as tk
 from tkinter.filedialog import askdirectory
-from tkinter import *
+#from tkinter import *
 from tkinter import ttk
 
 def read_ncdf(file,vars=[]):
     """ Reads a netCDF 3 file and returns a dict with its variables
-    
+
     Parameters
     ----------
     file : string
@@ -50,7 +50,7 @@ def read_ncdf(file,vars=[]):
 class spectra:
     """ Spectra object that contains plot methods and parameters"""
     def __init__(self,dir):
-        self._has_spectra = True if glob.glob(dir+'*_spectra.cdf') else False 
+        self._has_spectra = True if glob.glob(dir+'*_spectra.cdf') else False
         if self._has_spectra:
             spec = read_ncdf(glob.glob(dir+'*_spectra.cdf')[0])
             self.lam = spec['lambda']
@@ -66,13 +66,13 @@ class spectra:
             self.wl_max = np.max(self.lam)
             self.dlam=np.abs(self.lam[1]-self.lam[0])
 
-            self.chan = StringVar(value='Channel 1')
-            self.nbi_on = BooleanVar(value=False)
-            self.fida_on = BooleanVar(value=False)
-            self.brems_on = BooleanVar(value=True)
-            self.legend_on = BooleanVar(value=True)
+            self.chan = tk.StringVar(value='Channel 1')
+            self.nbi_on = tk.BooleanVar(value=False)
+            self.fida_on = tk.BooleanVar(value=False)
+            self.brems_on = tk.BooleanVar(value=True)
+            self.legend_on = tk.BooleanVar(value=True)
 
-            if sum(self.full[0,:]) != 0: 
+            if sum(self.full[0,:]) != 0:
                 self.nbi_on.set(True)
 
             if sum(self.fida[0,:]) != 0:
@@ -168,8 +168,8 @@ class npa:
 
         if (self._has_npa or self._has_wght):
             self.channels=dict(('Channel '+str(i+1),i) for i in range(0,3))
-        
-        self.chan=StringVar(value='Channel 1')
+
+        self.chan=tk.StringVar(value='Channel 1')
 
     def plot_neutral_birth(self,fig,canvas):
         if self._has_npa:
@@ -180,7 +180,7 @@ class npa:
                 ax.plot(self.x_grid[0,:,:],self.y_grid[0,:,:],'k,')
                 ax.contour(self.x_grid[0,:,:],self.y_grid[0,:,:],self.dens,20)
                 ax.plot([self.xlos[ch],self.xlens[ch]],[self.ylos[ch],self.ylens[ch]],'k')
-            ax.plot(self.ipos[ch,0,0:self.counts[ch]],self.ipos[ch,1,0:self.counts[ch]],'k,',alpha=.3)            
+            ax.plot(self.ipos[ch,0,0:self.counts[ch]],self.ipos[ch,1,0:self.counts[ch]],'k,',alpha=.3)
             ax.set_title('Neutral Birth Position')
             ax.set_xlim(min(self.x_grid[0,0,:]),max(self.x_grid[0,0,:]))
             ax.set_ylim(min(self.y_grid[0,:,0]),max(self.y_grid[0,:,0]))
@@ -233,11 +233,11 @@ class weights:
             self.n_rad=npa['radius']
             self.n_chan=len(self.n_rad)
             self.npa_chans=dict(('Channel '+str(i+1),i) for i in range(0,self.n_chan))
- 
-        self.lam_val=DoubleVar(value=655.0)
-        self.fida_chan=StringVar(value='Channel 1')
-        self.npa_chan=StringVar(value='Channel 1')
-        
+
+        self.lam_val=tk.DoubleVar(value=655.0)
+        self.fida_chan=tk.StringVar(value='Channel 1')
+        self.npa_chan=tk.StringVar(value='Channel 1')
+
     def plot_npa_weights(self,fig,canvas):
         if self._has_npa_wght:
             ch=self.npa_chans[self.npa_chan.get()]
@@ -269,7 +269,7 @@ class neutrals:
     def __init__(self,dir):
         self._has_neut= True if glob.glob(dir+'*_neutrals.cdf') else False
         self._has_geo= True if glob.glob(dir+'*_inputs.cdf') else False
-      
+
         if self._has_neut and self._has_geo:
             neut=read_ncdf(glob.glob(dir+'*_neutrals.cdf')[0])
             geo=read_ncdf(glob.glob(dir+'*_inputs.cdf')[0],vars=['x_grid','y_grid','z_grid','u_grid','v_grid','w_grid'])
@@ -285,14 +285,14 @@ class neutrals:
             self.w_grid=geo['w_grid']
 
         ##Radio Buttons Variable
-        self.plot_type=StringVar(value='XY')
+        self.plot_type=tk.StringVar(value='XY')
 
         ##Checkbox Variables
-        self.use_uvw = BooleanVar(value=False)
-        self.full_on = BooleanVar(value=True)
-        self.half_on = BooleanVar(value=True)
-        self.third_on = BooleanVar(value=True)
-        self.halo_on = BooleanVar(value=True)
+        self.use_uvw = tk.BooleanVar(value=False)
+        self.full_on = tk.BooleanVar(value=True)
+        self.half_on = tk.BooleanVar(value=True)
+        self.third_on = tk.BooleanVar(value=True)
+        self.halo_on = tk.BooleanVar(value=True)
 
     def plot_neutrals(self,fig,canvas):
         full_on = self.full_on.get()
@@ -305,7 +305,7 @@ class neutrals:
             ax=fig.add_subplot(111)
             pt=self.plot_type.get()
             if pt == 'X':
-                if self.use_uvw.get(): 
+                if self.use_uvw.get():
                     x=self.u_grid[0,0,:]
                     ax.set_xlabel('U [cm]')
                 else:
@@ -324,7 +324,7 @@ class neutrals:
                 ax.set_ylabel('Density [cm^-3]')
                 canvas.show()
             if pt == 'Y':
-                if self.use_uvw.get(): 
+                if self.use_uvw.get():
                     x=self.v_grid[0,:,0]
                     ax.set_xlabel('V [cm]')
                 else:
@@ -343,7 +343,7 @@ class neutrals:
                 ax.set_ylabel('Density [cm^-3]')
                 canvas.show()
             if pt == 'Z':
-                if self.use_uvw.get(): 
+                if self.use_uvw.get():
                     x=self.w_grid[:,0,0]
                     ax.set_xlabel('W [cm]')
                 else:
@@ -362,7 +362,7 @@ class neutrals:
                 ax.set_ylabel('Density [cm^-3]')
                 canvas.show()
             if pt == 'XY':
-                if self.use_uvw.get(): 
+                if self.use_uvw.get():
                     x=self.u_grid[0,:,:]
                     y=self.v_grid[0,:,:]
                     ax.set_xlabel('U [cm]')
@@ -384,7 +384,7 @@ class neutrals:
                 ax.set_title('Neutral Density')
                 canvas.show()
             if pt == 'XZ':
-                if self.use_uvw.get(): 
+                if self.use_uvw.get():
                     x=self.u_grid[:,0,:]
                     y=self.w_grid[:,0,:]
                     ax.set_xlabel('U [cm]')
@@ -406,7 +406,7 @@ class neutrals:
                 ax.set_title('Neutral Density')
                 canvas.show()
             if pt == 'YZ':
-                if self.use_uvw.get(): 
+                if self.use_uvw.get():
                     x=self.v_grid[:,:,0]
                     y=self.w_grid[:,:,0]
                     ax.set_xlabel('V [cm]')
@@ -427,7 +427,7 @@ class neutrals:
                 fig.colorbar(c)
                 ax.set_title('Neutral Density')
                 canvas.show()
-                
+
 class viewer:
     """Class that contains FIDAsim result viewer window"""
     def __init__(self,parent):
@@ -436,32 +436,32 @@ class viewer:
         parent.title('FIDAviewer')
 
         #Make MenuBar
-        self.MenuBar=Menu(parent)
+        self.MenuBar=tk.Menu(parent)
         parent.config(menu=self.MenuBar)
-        self.file=Menu(self.MenuBar,tearoff=False)
+        self.file=tk.Menu(self.MenuBar,tearoff=False)
         self.file.add_command(label='Load Run',command=(lambda: self.load_dir()))
         self.file.add_command(label='Quit',command=(lambda: sys.exit()))
         self.MenuBar.add_cascade(label='File',menu=self.file,underline=0)
 
         #Make Notebook
         self.nb=ttk.Notebook(parent)
-        self.spectra_frame=ttk.Frame(self.nb)         
-        self.npa_frame=ttk.Frame(self.nb)         
-        self.neutrals_frame=ttk.Frame(self.nb)         
+        self.spectra_frame=ttk.Frame(self.nb)
+        self.npa_frame=ttk.Frame(self.nb)
+        self.neutrals_frame=ttk.Frame(self.nb)
         self.weights_frame=ttk.Frame(self.nb)
-        self.nb.add(self.spectra_frame,text='Spectra')         
-        self.nb.add(self.npa_frame,text='NPA')         
-        self.nb.add(self.neutrals_frame,text='Neutrals')         
+        self.nb.add(self.spectra_frame,text='Spectra')
+        self.nb.add(self.npa_frame,text='NPA')
+        self.nb.add(self.neutrals_frame,text='Neutrals')
         self.nb.add(self.weights_frame,text='Weights')
-        self.nb.pack(side=LEFT,expand=Y,fill=BOTH)
+        self.nb.pack(side=tk.LEFT,expand=tk.Y,fill=tk.BOTH)
 
         self.fig=plt.Figure(figsize=(6,5),dpi=100)
         self.ax=self.fig.add_subplot(111)
         self.canvas=FigureCanvasTkAgg(self.fig,master=parent)
-        self.canvas.get_tk_widget().pack(side=RIGHT)
+        self.canvas.get_tk_widget().pack(side=tk.RIGHT)
         self.toolbar=NavigationToolbar2TkAgg(self.canvas,parent)
         self.toolbar.update()
-        self.canvas._tkcanvas.pack(side=TOP,expand=Y,fill=BOTH)      
+        self.canvas._tkcanvas.pack(side=tk.TOP,expand=tk.Y,fill=tk.BOTH)
 
         #Spectra Frame
         if self.spec._has_spectra:
@@ -477,18 +477,18 @@ class viewer:
             	onvalue=False,offvalue=True).pack()
 
         	ttk.Button(self.spectra_frame,text='Plot Spectra',\
-            	command=(lambda: self.spec.plot_spectra(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
+            	command=(lambda: self.spec.plot_spectra(self.fig,self.canvas))).pack(side=tk.TOP,expand=tk.Y,fill=tk.BOTH)
         	ttk.Button(self.spectra_frame,text='Plot Intensity',\
-            	command=(lambda: self.spec.plot_intensity(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
+            	command=(lambda: self.spec.plot_intensity(self.fig,self.canvas))).pack(side=tk.TOP,expand=tk.Y,fill=tk.BOTH)
 
         #NPA Frame
         if self.npa._has_npa:
         	ttk.Combobox(self.npa_frame,textvariable=self.npa.chan,\
             	values=tuple(self.npa.channels.keys())).pack()
         	ttk.Button(self.npa_frame,text='Plot Neutral Birth',\
-            	command=(lambda: self.npa.plot_neutral_birth(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
+            	command=(lambda: self.npa.plot_neutral_birth(self.fig,self.canvas))).pack(side=tk.TOP,expand=tk.Y,fill=tk.BOTH)
         	ttk.Button(self.npa_frame,text='Plot Flux',\
-            	command=(lambda: self.npa.plot_flux(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
+            	command=(lambda: self.npa.plot_flux(self.fig,self.canvas))).pack(side=tk.TOP,expand=tk.Y,fill=tk.BOTH)
 
         #Neutrals Frame
         ttk.Radiobutton(self.neutrals_frame,text='Density vs X',variable=self.neut.plot_type,value='X').pack()
@@ -511,26 +511,26 @@ class viewer:
             onvalue=False,offvalue=True).pack()
 
         ttk.Button(self.neutrals_frame,text='Plot',\
-            command=(lambda: self.neut.plot_neutrals(self.fig,self.canvas))).pack(expand=Y,fill=BOTH)
+            command=(lambda: self.neut.plot_neutrals(self.fig,self.canvas))).pack(expand=tk.Y,fill=tk.BOTH)
 
         #Weights Frame
         if self.wght._has_fida_wght:
         	ttk.Combobox(self.weights_frame,textvariable=self.wght.fida_chan,\
             	values=tuple(self.wght.fida_chans.keys())).pack()
 
-        	Scale(self.weights_frame,orient=HORIZONTAL,length=200,\
+        	tk.Scale(self.weights_frame,orient=tk.HORIZONTAL,length=200,\
             	from_=self.wght.wl_min,to=self.wght.wl_max,resolution=self.wght.dlam,variable=self.wght.lam_val).pack()
 
         	ttk.Button(self.weights_frame,text='Plot FIDA Weights',\
-            	command=(lambda: self.wght.plot_fida_weights(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
+            	command=(lambda: self.wght.plot_fida_weights(self.fig,self.canvas))).pack(side=tk.TOP,expand=tk.Y,fill=tk.BOTH)
 
         if self.wght._has_npa_wght:
         	ttk.Combobox(self.weights_frame,textvariable=self.wght.npa_chan,\
             	values=tuple(self.wght.npa_chans.keys())).pack()
 
         	ttk.Button(self.weights_frame,text='Plot NPA Weights',\
-            	command=(lambda: self.wght.plot_npa_weights(self.fig,self.canvas))).pack(side=TOP,expand=Y,fill=BOTH)
-  
+            	command=(lambda: self.wght.plot_npa_weights(self.fig,self.canvas))).pack(side=tk.TOP,expand=tk.Y,fill=tk.BOTH)
+
 
     def load_dir(self):
         self.dir = askdirectory()
@@ -543,7 +543,7 @@ class viewer:
         self.wght = weights(self.dir)
 
 if __name__=='__main__':
-    root=Tk()
+    root=tk.Tk()
     viewer(root)
     root.mainloop()
 
