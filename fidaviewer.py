@@ -7,13 +7,13 @@ import glob
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
 from scipy.io import netcdf
-
 import numpy as np
-
 import tkinter as tk
 from tkinter.filedialog import askdirectory
 #from tkinter import *
 from tkinter import ttk
+import h5py
+
 
 def read_ncdf(file,vars=[]):
     """ Reads a netCDF 3 file and returns a dict with its variables
@@ -47,7 +47,28 @@ def read_ncdf(file,vars=[]):
     f.close()
     return d
 
-class spectra:
+def load_dict_from_hdf5(filename):
+    """
+    ....
+    """
+    with h5py.File(filename, 'r') as h5file:
+        return recursively_load_dict_contents_from_group(h5file, '/')
+
+
+def recursively_load_dict_contents_from_group(h5file, path):
+    """
+    ....
+    """
+    ans = {}
+    for key, item in h5file[path].items():
+        if isinstance(item, h5py._hl.dataset.Dataset):
+            ans[key] = item.value
+        elif isinstance(item, h5py._hl.group.Group):
+            ans[key] = recursively_load_dict_contents_from_group(h5file, path + key + '/')
+    return ans
+
+
+class Spectra:
     """ Spectra object that contains plot methods and parameters"""
     def __init__(self,dir):
         self._has_spectra = True if glob.glob(dir+'*_spectra.cdf') else False
@@ -133,7 +154,7 @@ class spectra:
             canvas.show()
         else: print('SPECTRA: No file')
 
-class npa:
+class NPA:
     """ NPA object that contains plot methods and parameters"""
     def __init__(self,dir):
         self._has_npa= True if glob.glob(dir+'*_npa.cdf') else False
@@ -206,7 +227,7 @@ class npa:
             canvas.show()
         else: print('NPA: No file')
 
-class weights:
+class Weights:
     """ Weights object that contains plot methods and parameters"""
     def __init__(self,dir):
         self._has_npa_wght= True if glob.glob(dir+'*_npa_weights.cdf') else False
@@ -264,7 +285,7 @@ class weights:
             ax.set_title('FIDA Weight')
             canvas.show()
 
-class neutrals:
+class Neutrals:
     """ Neutrals object that contains plot methods and parameters"""
     def __init__(self,dir):
         self._has_neut= True if glob.glob(dir+'*_neutrals.cdf') else False
@@ -428,7 +449,7 @@ class neutrals:
                 ax.set_title('Neutral Density')
                 canvas.show()
 
-class viewer:
+class Viewer:
     """Class that contains FIDAsim result viewer window"""
     def __init__(self,parent):
 
@@ -537,13 +558,13 @@ class viewer:
         if self.dir == '': self.dir=os.getcwd()
         if self.dir[-1] != '/': self.dir+='/'
 
-        self.spec = spectra(self.dir)
-        self.npa = npa(self.dir)
-        self.neut = neutrals(self.dir)
-        self.wght = weights(self.dir)
+        self.spec = Spectra(self.dir)
+        self.npa = NPA(self.dir)
+        self.neut = Neutrals(self.dir)
+        self.wght = Weights(self.dir)
 
 if __name__=='__main__':
     root=tk.Tk()
-    viewer(root)
+    Viewer(root)
     root.mainloop()
 
