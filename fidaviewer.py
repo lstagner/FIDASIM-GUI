@@ -10,9 +10,10 @@ from scipy.io import netcdf
 
 import numpy as np
 
-from Tkinter import *
-from tkFileDialog import askdirectory
-import ttk
+import tkinter as tk
+from tkinter.filedialog import askdirectory
+from tkinter import *
+from tkinter import ttk
 
 def read_ncdf(file,vars=[]):
     """ Reads a netCDF 3 file and returns a dict with its variables
