@@ -17,6 +17,9 @@ import f90nml
 """
 Todo
 ----
+* in taking mean of beam densities, should it only be for non-zero elements?
+* optimize: can more stuff be loaded only when used? can more stuff be saved and not recalculated (ie set/get)?
+* option to change volume element in neutral plotting for better fidelity in going from beam to mach coords
 * put NB name on plot
 * find out if histogram2d give left edges or right
 * DONE - change xyz to uvw and vise versa in Neutrals
@@ -364,70 +367,152 @@ class Neutrals:
             pt = self.plot_type.get()
 
             if pt == 'X':
-                if self.use_mach_coords.get():
-                    x = self.x_grid[:, 0, 0]
+                if self.use_mach_coords.get() and not self.beam_mach_same:
+                    # Use machine coords and they're not the same as beam coords
+
                     ax.set_xlabel('X [cm]')
+
+                    # Need to bin data onto mach regular grid before taking projections
+                    fdens_hist = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (self.nx, self.ny), weights=self.fdens.flatten())
+                    fdens = fdens_hist[0]
+
+                    # Histogram returns edges of shape (nx+1). Convert to centers
+                    xedges = fdens_hist[1]
+                    yedges = fdens_hist[2]
+                    dx = xedges[1] - xedges[0]
+                    x = xedges[0:-1] + dx / 2.
+
+                    hdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.hdens.flatten())[0]
+                    tdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.tdens.flatten())[0]
+                    halodens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.halodens.flatten())[0]
+
+                    # histogram2d sums weights, need mean
+                    fdens = fdens.mean(1) / self.nz
+                    hdens = hdens.mean(1) / self.nz
+                    tdens = tdens.mean(1) / self.nz
+                    halodens = halodens.mean(1) / self.nz
                 else:
-                    x = self.x_grid_beam[:, 0, 0]
-                    ax.set_xlabel('$X_{beam}$ [cm]')
+                    # Use beam coords or beam and machine coords are the same
+                    if self.use_mach_coords.get():
+                        ax.set_xlabel('X [cm]')
+                    elif self.beam_mach_same:
+                        ax.set_xlabel('$X = X_{beam}$ [cm]')
+                    else:
+                        ax.set_xlabel('$X_{beam}$ [cm]')
 
-#                if self.beam_mach_same or not self.use_mach_coords.get():
                     # Use data as is for beam coords or when coord systems are the same
-                fdens = self.fdens.sum(1).sum(1)
-                hdens = self.hdens.sum(1).sum(1)
-                tdens = self.tdens.sum(1).sum(1)
-                halodens = self.halodens.sum(1).sum(1)
-#                else:
-                    # Need to bin data onto new regular grid
+                    x = self.x_grid_beam[:, 0, 0]
+                    fdens = self.fdens.mean(1).mean(1)
+                    hdens = self.hdens.mean(1).mean(1)
+                    tdens = self.tdens.mean(1).mean(1)
+                    halodens = self.halodens.mean(1).mean(1)
 
-                if full_on: ax.plot(x,fdens,label = 'Full')
-                if half_on: ax.plot(x,hdens,label = 'Half')
-                if third_on: ax.plot(x,tdens,label = 'Third')
-                if halo_on: ax.plot(x,halodens,label = 'Halo')
+                if full_on: ax.plot(x, fdens, label = 'Full')
+                if half_on: ax.plot(x, hdens, label = 'Half')
+                if third_on: ax.plot(x, tdens, label = 'Third')
+                if halo_on: ax.plot(x, halodens, label = 'Halo')
                 ax.legend()
                 ax.set_title('Neutral Density')
-                ax.set_ylabel('Density [$cm^{-3}$]')
+                ax.set_ylabel('Mean Density [$cm^{-3}$]')
                 canvas.show()
 
             if pt == 'Y':
-                if self.use_mach_coords.get():
-                    x = self.y_grid[0, :, 0]
+                if self.use_mach_coords.get() and not self.beam_mach_same:
+                    # Use machine coords and they're not the same as beam coords
+
                     ax.set_xlabel('Y [cm]')
+
+                    # Need to bin data onto mach regular grid before taking projections
+                    fdens_hist = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (self.nx, self.ny), weights=self.fdens.flatten())
+                    fdens = fdens_hist[0]
+
+                    # Histogram returns edges of shape (nx+1). Convert to centers
+                    xedges = fdens_hist[1]
+                    yedges = fdens_hist[2]
+                    dx = yedges[1] - yedges[0]
+                    x = yedges[0:-1] + dx / 2.
+
+                    hdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.hdens.flatten())[0]
+                    tdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.tdens.flatten())[0]
+                    halodens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.halodens.flatten())[0]
+
+                    # histogram2d sums weights, need mean
+                    fdens = fdens.mean(0) / self.nz
+                    hdens = hdens.mean(0) / self.nz
+                    tdens = tdens.mean(0) / self.nz
+                    halodens = halodens.mean(0) / self.nz
                 else:
+                    # Use beam coords or beam and machine coords are the same
+                    if self.use_mach_coords.get():
+                        ax.set_xlabel('Y [cm]')
+                    elif self.beam_mach_same:
+                        ax.set_xlabel('$Y = Y_{beam}$ [cm]')
+                    else:
+                        ax.set_xlabel('$Y_{beam}$ [cm]')
+
+                    # Use data as is for beam coords or when coord systems are the same
                     x = self.y_grid_beam[0, :, 0]
-                    ax.set_xlabel('$Y_{beam}$ [cm]')
-                fdens = self.fdens.sum(0).sum(1)
-                hdens = self.hdens.sum(0).sum(1)
-                tdens = self.tdens.sum(0).sum(1)
-                halodens = self.halodens.sum(0).sum(1)
-                if full_on: ax.plot(x,fdens,label = 'Full')
-                if half_on: ax.plot(x,hdens,label = 'Half')
-                if third_on: ax.plot(x,tdens,label = 'Third')
-                if halo_on: ax.plot(x,halodens,label = 'Halo')
+                    fdens = self.fdens.mean(0).mean(1)
+                    hdens = self.hdens.mean(0).mean(1)
+                    tdens = self.tdens.mean(0).mean(1)
+                    halodens = self.halodens.mean(0).mean(1)
+
+                if full_on: ax.plot(x, fdens, label = 'Full')
+                if half_on: ax.plot(x, hdens, label = 'Half')
+                if third_on: ax.plot(x, tdens, label = 'Third')
+                if halo_on: ax.plot(x, halodens, label = 'Halo')
                 ax.legend()
                 ax.set_title('Neutral Density')
-                ax.set_ylabel('Density [$cm^{-3}$]')
+                ax.set_ylabel('Mean Density [$cm^{-3}$]')
                 canvas.show()
 
             if pt == 'Z':
-                if self.use_mach_coords.get():
-                    x = self.z_grid[0, 0, :]
+                if self.use_mach_coords.get() and not self.beam_mach_same:
+                    # Use machine coords and they're not the same as beam coords
                     ax.set_xlabel('Z [cm]')
-                else:
-                    x = self.z_grid_beam[0, 0, :]
-                    ax.set_xlabel('$Z_{beam}$ [cm]')
-                fdens = self.fdens.sum(0).sum(0)
-                hdens = self.hdens.sum(0).sum(0)
-                tdens = self.tdens.sum(0).sum(0)
-                halodens = self.halodens.sum(0).sum(0)
 
-                if full_on: ax.plot(x,fdens,label = 'Full')
-                if half_on: ax.plot(x,hdens,label = 'Half')
-                if third_on: ax.plot(x,tdens,label = 'Third')
-                if halo_on: ax.plot(x,halodens,label = 'Halo')
+                    # Need to bin data onto mach regular grid before taking projections
+                    fdens_hist = np.histogram2d(self.x_grid.flatten(), self.z_grid.flatten(), bins = (self.nx, self.nz), weights=self.fdens.flatten())
+                    fdens = fdens_hist[0]
+
+                    # Histogram returns edges of shape (nx+1). Convert to centers
+                    xedges = fdens_hist[1]
+                    yedges = fdens_hist[2]
+                    dx = yedges[1] - yedges[0]
+                    x = yedges[0:-1] + dx / 2.
+
+                    hdens = np.histogram2d(self.x_grid.flatten(), self.z_grid.flatten(), bins = (xedges, yedges), weights=self.hdens.flatten())[0]
+                    tdens = np.histogram2d(self.x_grid.flatten(), self.z_grid.flatten(), bins = (xedges, yedges), weights=self.tdens.flatten())[0]
+                    halodens = np.histogram2d(self.x_grid.flatten(), self.z_grid.flatten(), bins = (xedges, yedges), weights=self.halodens.flatten())[0]
+
+                    # histogram2d sums weights, need mean
+                    fdens = fdens.mean(0) / self.ny
+                    hdens = hdens.mean(0) / self.ny
+                    tdens = tdens.mean(0) / self.ny
+                    halodens = halodens.mean(0) / self.ny
+                else:
+                    # Use beam coords or beam and machine coords are the same
+                    if self.use_mach_coords.get():
+                        ax.set_xlabel('Z [cm]')
+                    elif self.beam_mach_same:
+                        ax.set_xlabel('$Z = Z_{beam}$ [cm]')
+                    else:
+                        ax.set_xlabel('$Z_{beam}$ [cm]')
+
+                    # Use data as is for beam coords or when coord systems are the same
+                    x = self.z_grid_beam[0, 0, :]
+                    fdens = self.fdens.mean(0).mean(0)
+                    hdens = self.hdens.mean(0).mean(0)
+                    tdens = self.tdens.mean(0).mean(0)
+                    halodens = self.halodens.mean(0).mean(0)
+
+                if full_on: ax.plot(x, fdens, label = 'Full')
+                if half_on: ax.plot(x, hdens, label = 'Half')
+                if third_on: ax.plot(x, tdens, label = 'Third')
+                if halo_on: ax.plot(x, halodens, label = 'Halo')
                 ax.legend()
                 ax.set_title('Neutral Density')
-                ax.set_ylabel('Density [cm^-3]')
+                ax.set_ylabel('Mean Density [$cm^{-3}$]')
                 canvas.show()
 
             if pt == 'XY':
@@ -454,8 +539,14 @@ class Neutrals:
                     hdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.hdens.flatten())[0]
                     tdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.tdens.flatten())[0]
                     halodens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.halodens.flatten())[0]
+
+                    # histogram2d sums weights, need mean
+                    fdens = fdens / self.nz
+                    hdens = hdens / self.nz
+                    tdens = tdens / self.nz
+                    halodens = halodens / self.nz
                 else:
-                    # Use machine coords or beam and machine coords are the same
+                    # Use beam coords or beam and machine coords are the same
                     if self.use_mach_coords.get():
                         ax.set_xlabel('X [cm]')
                         ax.set_ylabel('Y [cm]')
@@ -469,35 +560,20 @@ class Neutrals:
                     # Use data as is for beam coords or when coord systems are the same
                     x = self.x_grid_beam[:, :, 0]
                     y = self.y_grid_beam[:, :, 0]
-                    fdens = self.fdens.sum(2)
-                    hdens = self.hdens.sum(2)
-                    tdens = self.tdens.sum(2)
-                    halodens = self.halodens.sum(2)
+                    fdens = self.fdens.mean(2)
+                    hdens = self.hdens.mean(2)
+                    tdens = self.tdens.mean(2)
+                    halodens = self.halodens.mean(2)
 
                 dens = fdens * torf(full_on) + hdens * torf(half_on) + tdens * torf(third_on) + halodens * torf(halo_on)
 
                 c = ax.contourf(x, y, dens, 50)
-                fig.colorbar(c)
-                ax.set_title('Neutral Density')
+                cb = fig.colorbar(c)
+                cb.ax.set_ylabel('[$cm^{-3}$]')
+                ax.set_title('Mean Neutral Density')
                 canvas.show()
 
             if pt == 'XZ':
-#                if self.use_mach_coords.get():
-#                    x = self.x_grid[:, 0, :]
-#                    y = self.z_grid[:, 0, :]
-#                    ax.set_xlabel('X [cm]')
-#                    ax.set_ylabel('Z [cm]')
-#                else:
-#                    x = self.x_grid_beam[:, 0, :]
-#                    y = self.z_grid_beam[:, 0, :]
-#                    ax.set_xlabel('$X_{beam}$ [cm]')
-#                    ax.set_ylabel('$Z_{beam}$ [cm]')
-#
-#                fdens = self.fdens.sum(1)
-#                hdens = self.hdens.sum(1)
-#                tdens = self.tdens.sum(1)
-#                halodens = self.halodens.sum(1)
-
                 if self.use_mach_coords.get() and not self.beam_mach_same:
                     # Use machine coords and they're not the same as beam coords
 
@@ -521,8 +597,14 @@ class Neutrals:
                     hdens = np.histogram2d(self.x_grid.flatten(), self.z_grid.flatten(), bins = (xedges, yedges), weights=self.hdens.flatten())[0]
                     tdens = np.histogram2d(self.x_grid.flatten(), self.z_grid.flatten(), bins = (xedges, yedges), weights=self.tdens.flatten())[0]
                     halodens = np.histogram2d(self.x_grid.flatten(), self.z_grid.flatten(), bins = (xedges, yedges), weights=self.halodens.flatten())[0]
+
+                    # histogram2d sums weights, need mean
+                    fdens = fdens / self.ny
+                    hdens = hdens / self.ny
+                    tdens = tdens / self.ny
+                    halodens = halodens / self.ny
                 else:
-                    # Use machine coords or beam and machine coords are the same
+                    # Use beam coords or beam and machine coords are the same
                     if self.use_mach_coords.get():
                         ax.set_xlabel('X [cm]')
                         ax.set_ylabel('Z [cm]')
@@ -534,37 +616,22 @@ class Neutrals:
                         ax.set_ylabel('$Z_{beam}$ [cm]')
 
                     # Use data as is for beam coords or when coord systems are the same
-                    x = self.x_grid_beam[:, :, 0]
-                    y = self.z_grid_beam[:, :, 0]
-                    fdens = self.fdens.sum(1)
-                    hdens = self.hdens.sum(1)
-                    tdens = self.tdens.sum(1)
-                    halodens = self.halodens.sum(1)
+                    x = self.x_grid_beam[:, 0, :]
+                    y = self.z_grid_beam[:, 0, :]
+                    fdens = self.fdens.mean(1)
+                    hdens = self.hdens.mean(1)
+                    tdens = self.tdens.mean(1)
+                    halodens = self.halodens.mean(1)
 
                 dens = fdens * torf(full_on) + hdens * torf(half_on) + tdens * torf(third_on) + halodens * torf(halo_on)
 
                 c = ax.contourf(x,y,dens,50)
-                fig.colorbar(c)
-                ax.set_title('Neutral Density')
+                cb = fig.colorbar(c)
+                cb.ax.set_ylabel('[$cm^{-3}$]')
+                ax.set_title('Mean Neutral Density')
                 canvas.show()
 
             if pt == 'YZ':
-#                if self.use_mach_coords.get():
-#                    x = self.y_grid[0, :, :]
-#                    y = self.z_grid[0, :, :]
-#                    ax.set_xlabel('Y [cm]')
-#                    ax.set_ylabel('Z [cm]')
-#                else:
-#                    x = self.y_grid_beam[0, :, :]
-#                    y = self.z_grid_beam[0, :, :]
-#                    ax.set_xlabel('$Y_{beam}$ [cm]')
-#                    ax.set_ylabel('$Z_{beam}$ [cm]')
-#
-#                fdens = self.fdens.sum(0)
-#                hdens = self.hdens.sum(0)
-#                tdens = self.tdens.sum(0)
-#                halodens = self.halodens.sum(0)
-
                 if self.use_mach_coords.get() and not self.beam_mach_same:
                     # Use machine coords and they're not the same as beam coords
 
@@ -588,8 +655,14 @@ class Neutrals:
                     hdens = np.histogram2d(self.y_grid.flatten(), self.z_grid.flatten(), bins = (xedges, yedges), weights=self.hdens.flatten())[0]
                     tdens = np.histogram2d(self.y_grid.flatten(), self.z_grid.flatten(), bins = (xedges, yedges), weights=self.tdens.flatten())[0]
                     halodens = np.histogram2d(self.y_grid.flatten(), self.z_grid.flatten(), bins = (xedges, yedges), weights=self.halodens.flatten())[0]
+
+                    # histogram2d sums weights, need mean
+                    fdens = fdens / self.nx
+                    hdens = hdens / self.nx
+                    tdens = tdens / self.nx
+                    halodens = halodens / self.nx
                 else:
-                    # Use machine coords or beam and machine coords are the same
+                    # Use beam coords or beam and machine coords are the same
                     if self.use_mach_coords.get():
                         ax.set_xlabel('Y [cm]')
                         ax.set_ylabel('Z [cm]')
@@ -601,18 +674,19 @@ class Neutrals:
                         ax.set_ylabel('$Z_{beam}$ [cm]')
 
                     # Use data as is for beam coords or when coord systems are the same
-                    x = self.y_grid_beam[:, :, 0]
-                    y = self.z_grid_beam[:, :, 0]
-                    fdens = self.fdens.sum(0)
-                    hdens = self.hdens.sum(0)
-                    tdens = self.tdens.sum(0)
-                    halodens = self.halodens.sum(0)
+                    x = self.y_grid_beam[0, :, :]
+                    y = self.z_grid_beam[0, :, :]
+                    fdens = self.fdens.mean(0)
+                    hdens = self.hdens.mean(0)
+                    tdens = self.tdens.mean(0)
+                    halodens = self.halodens.mean(0)
 
                 dens = fdens * torf(full_on) + hdens * torf(half_on) + tdens * torf(third_on) + halodens * torf(halo_on)
 
-                c = ax.contourf(x,y,dens,50)
-                fig.colorbar(c)
-                ax.set_title('Neutral Density')
+                c = ax.contourf(x, y, dens, 50)
+                cb = fig.colorbar(c)
+                cb.ax.set_ylabel('[$cm^{-3}$]')
+                ax.set_title('Mean Neutral Density')
                 canvas.show()
 
 class Viewer:
@@ -625,10 +699,10 @@ class Viewer:
         #Make MenuBar
         self.MenuBar = tk.Menu(parent)
         parent.config(menu = self.MenuBar)
-        self.file = tk.Menu(self.MenuBar,tearoff = False)
-        self.file.add_command(label = 'Load Run',command = (lambda: self.load_dir()))
-        self.file.add_command(label = 'Quit',command = (lambda: sys.exit()))
-        self.MenuBar.add_cascade(label = 'File',menu = self.file,underline = 0)
+        self.file = tk.Menu(self.MenuBar, tearoff = False)
+        self.file.add_command(label = 'Load Run', command = (lambda: self.load_dir()))
+        self.file.add_command(label = 'Quit', command = (lambda: sys.exit()))
+        self.MenuBar.add_cascade(label = 'File', menu = self.file, underline = 0)
 
         #Make Notebook
         self.nb = ttk.Notebook(parent)
@@ -637,38 +711,42 @@ class Viewer:
         self.neutrals_frame = ttk.Frame(self.nb)
         self.weights_frame = ttk.Frame(self.nb)
 #        self.imaging_frame = ttk.Frame(self.nb)
-        self.nb.add(self.spectra_frame,text = 'Spectra')
-        self.nb.add(self.npa_frame,text = 'NPA')
-        self.nb.add(self.neutrals_frame,text = 'Neutrals')
-        self.nb.add(self.weights_frame,text = 'Weights')
-#        self.nb.add(self.imaging_frame,text = 'Imaging')
-        self.nb.pack(side = tk.LEFT,expand = tk.Y,fill = tk.BOTH)
-
-        self.fig = plt.Figure(figsize = (6,5),dpi = 100)
+        self.nb.add(self.spectra_frame, text = 'Spectra')
+        self.nb.add(self.npa_frame ,text = 'NPA')
+        self.nb.add(self.neutrals_frame, text = 'Neutrals')
+        self.nb.add(self.weights_frame, text = 'Weights')
+#        self.nb.add(self.imaging_frame, text = 'Imaging')
+        self.nb.pack(side = tk.LEFT , expand = tk.Y, fill = tk.BOTH)
+        self.fig = plt.Figure(figsize = (6, 5), dpi = 100)
         self.ax = self.fig.add_subplot(111)
-        self.canvas = FigureCanvasTkAgg(self.fig,master = parent)
+        self.canvas = FigureCanvasTkAgg(self.fig, master = parent)
         self.canvas.get_tk_widget().pack(side = tk.RIGHT)
-        self.toolbar = NavigationToolbar2TkAgg(self.canvas,parent)
+        self.toolbar = NavigationToolbar2TkAgg(self.canvas, parent)
         self.toolbar.update()
-        self.canvas._tkcanvas.pack(side = tk.TOP,expand = tk.Y,fill = tk.BOTH)
+        self.canvas._tkcanvas.pack(side = tk.TOP, expand = tk.Y, fill = tk.BOTH)
 
         #Spectra Frame
         if self.spec._has_spectra:
-	         ttk.Combobox(self.spectra_frame,textvariable = self.spec.chan,\
-    	                   values = tuple(self.spec.channels.keys())).pack()
-        	ttk.Checkbutton(self.spectra_frame,text = 'Hide NBI', variable = self.spec.nbi_on,\
-            	onvalue = False,offvalue = True).pack()
-        	ttk.Checkbutton(self.spectra_frame,text = 'Hide FIDA', variable = self.spec.fida_on,\
-            	onvalue = False,offvalue = True).pack()
-        	ttk.Checkbutton(self.spectra_frame,text = 'No Bremsstrahlung', variable = self.spec.brems_on,\
-            	onvalue = False,offvalue = True).pack()
-        	ttk.Checkbutton(self.spectra_frame,text = 'Hide Legend', variable = self.spec.legend_on,\
-            	onvalue = False,offvalue = True).pack()
+            ttk.Combobox(self.spectra_frame, textvariable = self.spec.chan,
+                         values = tuple(self.spec.channels.keys())).pack()
 
-        	ttk.Button(self.spectra_frame,text = 'Plot Spectra',\
-            	command = (lambda: self.spec.plot_spectra(self.fig,self.canvas))).pack(side = tk.TOP,expand = tk.Y,fill = tk.BOTH)
-        	ttk.Button(self.spectra_frame,text = 'Plot Intensity',\
-            	command = (lambda: self.spec.plot_intensity(self.fig,self.canvas))).pack(side = tk.TOP,expand = tk.Y,fill = tk.BOTH)
+            ttk.Checkbutton(self.spectra_frame, text = 'Hide NBI', variable = self.spec.nbi_on,
+                            onvalue = False, offvalue = True).pack()
+
+            ttk.Checkbutton(self.spectra_frame,text = 'Hide FIDA', variable = self.spec.fida_on,
+                            onvalue = False,offvalue = True).pack()
+
+            ttk.Checkbutton(self.spectra_frame,text = 'No Bremsstrahlung', variable = self.spec.brems_on,\
+            	             onvalue = False,offvalue = True).pack()
+
+            ttk.Checkbutton(self.spectra_frame,text = 'Hide Legend', variable = self.spec.legend_on,\
+            	             onvalue = False,offvalue = True).pack()
+
+            ttk.Button(self.spectra_frame,text = 'Plot Spectra',\
+            	        command = (lambda: self.spec.plot_spectra(self.fig,self.canvas))).pack(side = tk.TOP,expand = tk.Y,fill = tk.BOTH)
+
+            ttk.Button(self.spectra_frame,text = 'Plot Intensity',\
+            	        command = (lambda: self.spec.plot_intensity(self.fig,self.canvas))).pack(side = tk.TOP,expand = tk.Y,fill = tk.BOTH)
 
         #NPA Frame
         if self.npa._has_npa:
