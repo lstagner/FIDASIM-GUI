@@ -20,9 +20,7 @@ Todo
 * DONE - change xyz to uvw and vise versa in Neutrals
 * rerun sample file sim setting all bools to true
 * implement multiple matching filenames
-* Make wl_min and wl_max changeable
-* dlam, wl_min, wl_max being rewritten by Weights
-* assure neutral plots are binning before projecting
+* Make Spectra wl_min and wl_max changeable from gui
 * use histogram2d when ~np.array_equal(x, uniq(x_grid)), etc. ie beam coords != mach coords
 * get more intellegent h5 reader to just grab what's needed
 * neutral density legend units
@@ -331,9 +329,15 @@ class Neutrals:
             self.x_grid = neut['grid']['x_grid'].T     # mach coords
             self.y_grid = neut['grid']['y_grid'].T     # mach coords
             self.z_grid = neut['grid']['z_grid'].T     # mach coords
+            self.nx = neut['grid']['nx']
+            self.ny = neut['grid']['ny']
+            self.nz = neut['grid']['nz']
 
             # beam coords
             self.x_grid_beam, self.y_grid_beam, self.z_grid_beam = np.meshgrid(neut['grid']['x'], neut['grid']['y'], neut['grid']['z'], indexing='ij')
+
+            # Are beam and machine coordinates the same?
+            self.beam_mach_same = np.array_equal(self.x_grid, self.x_grid_beam) and np.array_equal(self.y_grid, self.y_grid_beam) and np.array_equal(self.z_grid, self.z_grid_beam)
 
         ##Radio Buttons Variable
         self.plot_type = tk.StringVar(value = 'XY')
@@ -365,10 +369,15 @@ class Neutrals:
                     x = self.x_grid_beam[:, 0, 0]
                     ax.set_xlabel('$X_{beam}$ [cm]')
 
+#                if self.beam_mach_same or not self.use_mach_coords.get():
+                    # Use data as is for beam coords or when coord systems are the same
                 fdens = self.fdens.sum(1).sum(1)
                 hdens = self.hdens.sum(1).sum(1)
                 tdens = self.tdens.sum(1).sum(1)
                 halodens = self.halodens.sum(1).sum(1)
+#                else:
+                    # Need to bin data onto new regular grid
+
                 if full_on: ax.plot(x,fdens,label = 'Full')
                 if half_on: ax.plot(x,hdens,label = 'Half')
                 if third_on: ax.plot(x,tdens,label = 'Third')
@@ -420,8 +429,8 @@ class Neutrals:
 
             if pt == 'XY':
                 if self.use_mach_coords.get():
-                    x = self.x_grid[:, :, 0]
-                    y = self.y_grid[:, :, 0]
+#                    x = self.x_grid[:, :, 0]
+#                    y = self.y_grid[:, :, 0]
                     ax.set_xlabel('X [cm]')
                     ax.set_ylabel('Y [cm]')
                 else:
@@ -430,13 +439,47 @@ class Neutrals:
                     ax.set_xlabel('$X_{beam}$ [cm]')
                     ax.set_ylabel('$Y_{beam}$ [cm]')
 
-                fdens = self.fdens.sum(2)
-                hdens = self.hdens.sum(2)
-                tdens = self.tdens.sum(2)
-                halodens = self.halodens.sum(2)
+                if self.beam_mach_same or not self.use_mach_coords.get():
+                    # Use data as is for beam coords or when coord systems are the same
+                    fdens = self.fdens.sum(2)
+                    hdens = self.hdens.sum(2)
+                    tdens = self.tdens.sum(2)
+                    halodens = self.halodens.sum(2)
+                else:
+                    # Need to bin data onto mach regular grid before taking projections
+
+                    # Get histogram edges
+#                    xuniq = np.unique(self.x_grid)
+#                    dx = xuniq[1] -  xuniq[0]
+#                    xedges = xuniq[:-1] - dx
+#
+#                    yuniq = np.unique(self.y_grid)
+#                    dy = yuniq[1] -  yuniq[0]
+#                    yedges = yuniq[:-1] - dy
+
+#                    fdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.fdens.flatten())[0]
+#                    hdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.hdens.flatten())[0]
+#                    tdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.tdens.flatten())[0]
+#                    halodens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.halodens.flatten())[0]
+                    fdens_hist = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (self.nx, self.ny), weights=self.fdens.flatten())
+                    fdens = fdens_hist[0]
+
+                    # Histogram returns edges of shape (nx+1). Convert to centers
+                    xedges = fdens_hist[1]
+                    yedges = fdens_hist[2]
+                    dx = xedges[1] - xedges[0]
+                    dy = yedges[1] - yedges[0]
+                    x = xedges[0:-1] + dx / 2.
+                    y = yedges[0:-1] + dy / 2.
+
+                    x, y = np.meshgrid(x, y, indexing='ij')
+
+                    hdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.hdens.flatten())[0]
+                    tdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.tdens.flatten())[0]
+                    halodens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.halodens.flatten())[0]
 
                 dens = fdens * torf(full_on) + hdens * torf(half_on) + tdens * torf(third_on) + halodens * torf(halo_on)
-
+                print(x.shape, y.shape, dens.shape)
                 c = ax.contourf(x, y, dens, 50)
                 fig.colorbar(c)
                 ax.set_title('Neutral Density')
