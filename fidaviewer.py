@@ -299,7 +299,7 @@ class Weights:
             self.f_rad = fida['radius']
             self.f_wght = fida['weight']
             self.f_chan = len(self.f_rad)
-            self.fida_chans = dict(('Channel '+str(i+1),i) for i in range(0,self.f_chan))
+            self.fida_chans = collections.OrderedDict(('Channel '+str(i+1),i) for i in range(0,self.f_chan))
         else:
             print('No FIDA weights found')
 
@@ -313,7 +313,7 @@ class Weights:
             self.n_wght = npa['weight']
             self.n_rad = npa['radius']
             self.n_nchan = npa['nchan']  #len(self.n_rad)
-            self.npa_chans = dict(('Channel ' + str(i + 1), i) for i in range(0, self.n_nchan))
+            self.npa_chans = collections.OrderedDict(('Channel ' + str(i + 1), i) for i in range(0, self.n_nchan))
 
         self.lam_val = tk.DoubleVar(value = 655.0)
         self.fida_chan = tk.StringVar(value = 'Channel 1')
@@ -770,7 +770,7 @@ class Viewer:
         self.toolbar.update()
         self.canvas._tkcanvas.pack(side = tk.TOP, expand = tk.Y, fill = tk.BOTH)
 
-        #Spectra Frame
+        # Spectra Frame
         if self.spec._has_spectra:
             ttk.Combobox(self.spectra_frame, textvariable = self.spec.chan,
                          values = list(self.spec.channels.keys())).pack()
@@ -801,7 +801,7 @@ class Viewer:
         else:
             ttk.Label(self.spectra_frame, text = '\n\nNo spectral data found').pack()
 
-        #NPA Frame
+        # NPA Frame
         if self.npa._has_npa:
             ttk.Combobox(self.npa_frame, textvariable = self.npa.chan, values = tuple(self.npa.channels.keys())).pack()
 
@@ -813,7 +813,7 @@ class Viewer:
         else:
             ttk.Label(self.npa_frame, text = '\n\nNo NPA data found').pack()
 
-        #Neutrals Frame
+        # Neutrals Frame
         ttk.Radiobutton(self.neutrals_frame,text = 'Density vs X',variable = self.neut.plot_type,value = 'X').pack()
         ttk.Radiobutton(self.neutrals_frame,text = 'Density vs Y',variable = self.neut.plot_type,value = 'Y').pack()
         ttk.Radiobutton(self.neutrals_frame,text = 'Density vs Z',variable = self.neut.plot_type,value = 'Z').pack()
@@ -836,7 +836,7 @@ class Viewer:
         ttk.Button(self.neutrals_frame,text = 'Plot',\
                    command = (lambda: self.neut.plot_neutrals(self.fig,self.canvas))).pack(expand = tk.Y,fill = tk.BOTH)
 
-        #Weights Frame
+        # Weights Frame
         if self.wght._has_fida_wght:
             ttk.Combobox(self.weights_frame,textvariable = self.wght.fida_chan,\
                          values = tuple(self.wght.fida_chans.keys())).pack()
