@@ -17,6 +17,7 @@ import f90nml
 """
 Todo
 ----
+* find out if histogram2d give left edges or right
 * DONE - change xyz to uvw and vise versa in Neutrals
 * rerun sample file sim setting all bools to true
 * implement multiple matching filenames
@@ -428,39 +429,25 @@ class Neutrals:
                 canvas.show()
 
             if pt == 'XY':
-                if self.use_mach_coords.get():
+#                if self.use_mach_coords.get():
 #                    x = self.x_grid[:, :, 0]
 #                    y = self.y_grid[:, :, 0]
+#                    ax.set_xlabel('X [cm]')
+#                    ax.set_ylabel('Y [cm]')
+#                else:
+#                    x = self.x_grid_beam[:, :, 0]
+#                    y = self.y_grid_beam[:, :, 0]
+#                    ax.set_xlabel('$X_{beam}$ [cm]')
+#                    ax.set_ylabel('$Y_{beam}$ [cm]')
+
+
+                if self.use_mach_coords.get() and not self.beam_mach_same:
+                    # Use machine coords and they're not the same as beam coords
+
                     ax.set_xlabel('X [cm]')
                     ax.set_ylabel('Y [cm]')
-                else:
-                    x = self.x_grid_beam[:, :, 0]
-                    y = self.y_grid_beam[:, :, 0]
-                    ax.set_xlabel('$X_{beam}$ [cm]')
-                    ax.set_ylabel('$Y_{beam}$ [cm]')
 
-                if self.beam_mach_same or not self.use_mach_coords.get():
-                    # Use data as is for beam coords or when coord systems are the same
-                    fdens = self.fdens.sum(2)
-                    hdens = self.hdens.sum(2)
-                    tdens = self.tdens.sum(2)
-                    halodens = self.halodens.sum(2)
-                else:
                     # Need to bin data onto mach regular grid before taking projections
-
-                    # Get histogram edges
-#                    xuniq = np.unique(self.x_grid)
-#                    dx = xuniq[1] -  xuniq[0]
-#                    xedges = xuniq[:-1] - dx
-#
-#                    yuniq = np.unique(self.y_grid)
-#                    dy = yuniq[1] -  yuniq[0]
-#                    yedges = yuniq[:-1] - dy
-
-#                    fdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.fdens.flatten())[0]
-#                    hdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.hdens.flatten())[0]
-#                    tdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.tdens.flatten())[0]
-#                    halodens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.halodens.flatten())[0]
                     fdens_hist = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (self.nx, self.ny), weights=self.fdens.flatten())
                     fdens = fdens_hist[0]
 
@@ -477,6 +464,51 @@ class Neutrals:
                     hdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.hdens.flatten())[0]
                     tdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.tdens.flatten())[0]
                     halodens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.halodens.flatten())[0]
+                else:
+                    # Use machine coords or beam and machine coords are the same
+                    if self.use_mach_coords.get():
+                        ax.set_xlabel('X [cm]')
+                        ax.set_ylabel('Y [cm]')
+                    elif self.beam_mach_same:
+                        ax.set_xlabel('$X = X_{beam}$ [cm]')
+                        ax.set_ylabel('$Y = Y_{beam}$ [cm]')
+                    else:
+                        ax.set_xlabel('$X_{beam}$ [cm]')
+                        ax.set_ylabel('$Y_{beam}$ [cm]')
+
+                    # Use data as is for beam coords or when coord systems are the same
+                    x = self.x_grid_beam[:, :, 0]
+                    y = self.y_grid_beam[:, :, 0]
+                    fdens = self.fdens.sum(2)
+                    hdens = self.hdens.sum(2)
+                    tdens = self.tdens.sum(2)
+                    halodens = self.halodens.sum(2)
+
+
+#                if self.beam_mach_same or not self.use_mach_coords.get():
+#                    # Use data as is for beam coords or when coord systems are the same
+#                    fdens = self.fdens.sum(2)
+#                    hdens = self.hdens.sum(2)
+#                    tdens = self.tdens.sum(2)
+#                    halodens = self.halodens.sum(2)
+#                else:
+#                    # Need to bin data onto mach regular grid before taking projections
+#                    fdens_hist = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (self.nx, self.ny), weights=self.fdens.flatten())
+#                    fdens = fdens_hist[0]
+#
+#                    # Histogram returns edges of shape (nx+1). Convert to centers
+#                    xedges = fdens_hist[1]
+#                    yedges = fdens_hist[2]
+#                    dx = xedges[1] - xedges[0]
+#                    dy = yedges[1] - yedges[0]
+#                    x = xedges[0:-1] + dx / 2.
+#                    y = yedges[0:-1] + dy / 2.
+#
+#                    x, y = np.meshgrid(x, y, indexing='ij')
+#
+#                    hdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.hdens.flatten())[0]
+#                    tdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.tdens.flatten())[0]
+#                    halodens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.halodens.flatten())[0]
 
                 dens = fdens * torf(full_on) + hdens * torf(half_on) + tdens * torf(third_on) + halodens * torf(halo_on)
                 print(x.shape, y.shape, dens.shape)
