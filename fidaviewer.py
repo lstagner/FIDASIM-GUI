@@ -12,6 +12,7 @@ from tkinter.filedialog import askdirectory
 from tkinter import ttk
 import h5py
 import f90nml
+import collections
 
 
 """
@@ -20,24 +21,26 @@ Todo
 * in taking mean of beam densities, should it only be for non-zero elements?
 * optimize: can more stuff be loaded only when used? can more stuff be saved and not recalculated (ie set/get)?
 * option to change volume element in neutral plotting for better fidelity in going from beam to mach coords
-* put NB name on plot
 * find out if histogram2d give left edges or right
-* DONE - change xyz to uvw and vise versa in Neutrals
 * rerun sample file sim setting all bools to true
 * implement multiple matching filenames
 * Make Spectra wl_min and wl_max changeable from gui
-* use histogram2d when ~np.array_equal(x, uniq(x_grid)), etc. ie beam coords != mach coords
 * get more intellegent h5 reader to just grab what's needed
-* neutral density legend units
 * NPA needs work. I haven't used NPA data before - NGB
 * currently seems to load neutrals (more?) twice. check this and fix
-* how to sort channels in drop down box?
 * add another tab to gui "Imaging" w/ "Lens" drop down. Choose spectra and wavelength range to integrate and make contour
-* desplay msg like "No NPA file found" under each tab for clarity
+* DONE - display msg like "No NPA file found" under each tab for clarity
 * DONE - use f90nml python package to parse the fortran namelist file and find what was and wasn't calculated
 * DONE - check for multiple matching filenames
 * DONE - what is .get() business? This is tk setter/getter feature
 * DONE - Make brems separate signal and stop adding to other spectra
+* DONE - change xyz to uvw and vise versa in Neutrals
+* DONE - neutral density legend units
+* DONE - use histogram2d when ~np.array_equal(x, uniq(x_grid)), etc. ie beam coords != mach coords
+* DONE - give window name of dir
+* DONE - how to sort channels in drop down box?
+* DONE - put NB name on plot (in geo file)
+
 """
 
 def load_dict_from_hdf5(h5_filepath):
@@ -67,7 +70,6 @@ class Spectra:
         self._has_spectra = (len(spec_files) > 0)
 
         if self._has_spectra:
-
             print('Loading spectra')
 
             if len(spec_files) > 1:
@@ -77,7 +79,7 @@ class Spectra:
 
             self.lam = spec['lambda']
             self.nchan = spec['nchan']
-            self.channels = dict(('Channel ' + str(i + 1), i) for i in range(self.nchan))
+            self.channels = collections.OrderedDict(('Channel ' + str(i + 1), i) for i in range(self.nchan))
             self.wl_min = np.min(self.lam)
             self.wl_max = np.max(self.lam)
             self.dlam = np.abs(self.lam[1] - self.lam[0])
@@ -95,6 +97,8 @@ class Spectra:
                 self.half = spec['half']
                 self.third = spec['third']
                 self.halo = spec['halo']
+        else:
+            print('No spectra found')
 
     def plot_spectra(self, fig, canvas):
         if self._has_spectra:
@@ -173,8 +177,13 @@ class NPA:
 
             self.npa_energy = npa['energy']
             self.npa_flux = npa['flux']
+            self.nchan = npa['nchan']
+        else:
+            print('No NPA found')
 
         if self._has_wght:
+            print('Loading NPA weights')
+
             if len(wght_files) > 1:
                 raise NotImplementedError('Multiple NPA weight files found')
             else:
@@ -182,8 +191,11 @@ class NPA:
 
             self.w_energy = wght['energy']
             self.w_flux = wght['flux']
+        else:
+            print('No NPA weights found')
 
         if self._has_neut:
+
             if len(neut_files) > 1:
                 raise NotImplementedError('Multiple neutrals files found')
             else:
@@ -204,7 +216,7 @@ class NPA:
 #            self.ylens = geo['ylens'][w]
 
         if (self._has_npa or self._has_wght):
-            self.channels = dict(('Channel ' + str(i + 1), i) for i in range(0, 3))  # should it be nchan not 3???
+            self.channels = collections.OrderedDict(('Channel ' + str(i + 1), i) for i in range(0, self.nchan))  # should it be nchan not 3???
 
         self.chan = tk.StringVar(value = 'Channel 1')
 
@@ -255,6 +267,8 @@ class Weights:
         self._has_fida_wght = (len(fida_wght_files) > 0)
 
         if self._has_fida_wght:
+            print('Loading FIDA weights')
+
             if len(npa_wght_files) > 1:
                 raise NotImplementedError('Multiple FIDA weight files found')
             else:
@@ -269,6 +283,8 @@ class Weights:
             self.f_wght = fida['weight']
             self.f_chan = len(self.f_rad)
             self.fida_chans = dict(('Channel '+str(i+1),i) for i in range(0,self.f_chan))
+        else:
+            print('No FIDA weights found')
 
         if self._has_npa_wght:
             if len(npa_wght_files) > 1:
@@ -316,11 +332,24 @@ class Neutrals:
     """ Neutrals object that contains plot methods and parameters"""
     def __init__(self ,dir):
         neut_files = glob.glob(dir + '*_neutrals.h5')
+        geo_files = glob.glob(dir + '*_geometry.h5')
 
         self._has_neut = (len(neut_files) > 0)
+        self._has_geo = (len(geo_files) > 0)
+
+        if self._has_geo:
+            print('Loading geometry')
+
+            if len(geo_files) > 1:
+                raise NotImplementedError('Multiple geometry files found')
+            else:
+                geo = load_dict_from_hdf5(geo_files[0])
+
+            self.beam_name = geo['nbi']['name'].decode('UTF-8')
 
         if self._has_neut:
             print('Loading neutrals')
+
             if len(neut_files) > 1:
                 raise NotImplementedError('Multiple neutrals files found')
             else:
@@ -343,6 +372,8 @@ class Neutrals:
 
             # Are beam and machine coordinates the same?
             self.beam_mach_same = np.array_equal(self.x_grid, self.x_grid_beam) and np.array_equal(self.y_grid, self.y_grid_beam) and np.array_equal(self.z_grid, self.z_grid_beam)
+        else:
+            print('No neutrals found')
 
         ##Radio Buttons Variable
         self.plot_type = tk.StringVar(value = 'XY')
@@ -412,7 +443,7 @@ class Neutrals:
                 if third_on: ax.plot(x, tdens, label = 'Third')
                 if halo_on: ax.plot(x, halodens, label = 'Halo')
                 ax.legend()
-                ax.set_title('Neutral Density')
+                ax.set_title('Neutral Density. NB {}'.format(self.beam_name))
                 ax.set_ylabel('Mean Density [$cm^{-3}$]')
                 canvas.show()
 
@@ -462,7 +493,7 @@ class Neutrals:
                 if third_on: ax.plot(x, tdens, label = 'Third')
                 if halo_on: ax.plot(x, halodens, label = 'Halo')
                 ax.legend()
-                ax.set_title('Neutral Density')
+                ax.set_title('Neutral Density. NB {}'.format(self.beam_name))
                 ax.set_ylabel('Mean Density [$cm^{-3}$]')
                 canvas.show()
 
@@ -511,14 +542,13 @@ class Neutrals:
                 if third_on: ax.plot(x, tdens, label = 'Third')
                 if halo_on: ax.plot(x, halodens, label = 'Halo')
                 ax.legend()
-                ax.set_title('Neutral Density')
+                ax.set_title('Neutral Density. NB {}'.format(self.beam_name))
                 ax.set_ylabel('Mean Density [$cm^{-3}$]')
                 canvas.show()
 
             if pt == 'XY':
                 if self.use_mach_coords.get() and not self.beam_mach_same:
                     # Use machine coords and they're not the same as beam coords
-
                     ax.set_xlabel('X [cm]')
                     ax.set_ylabel('Y [cm]')
 
@@ -570,13 +600,12 @@ class Neutrals:
                 c = ax.contourf(x, y, dens, 50)
                 cb = fig.colorbar(c)
                 cb.ax.set_ylabel('[$cm^{-3}$]')
-                ax.set_title('Mean Neutral Density')
+                ax.set_title('Mean Neutral Density. NB {}'.format(self.beam_name))
                 canvas.show()
 
             if pt == 'XZ':
                 if self.use_mach_coords.get() and not self.beam_mach_same:
                     # Use machine coords and they're not the same as beam coords
-
                     ax.set_xlabel('X [cm]')
                     ax.set_ylabel('Z [cm]')
 
@@ -628,13 +657,12 @@ class Neutrals:
                 c = ax.contourf(x,y,dens,50)
                 cb = fig.colorbar(c)
                 cb.ax.set_ylabel('[$cm^{-3}$]')
-                ax.set_title('Mean Neutral Density')
+                ax.set_title('Mean Neutral Density. NB {}'.format(self.beam_name))
                 canvas.show()
 
             if pt == 'YZ':
                 if self.use_mach_coords.get() and not self.beam_mach_same:
                     # Use machine coords and they're not the same as beam coords
-
                     ax.set_xlabel('Y [cm]')
                     ax.set_ylabel('Z [cm]')
 
@@ -686,7 +714,7 @@ class Neutrals:
                 c = ax.contourf(x, y, dens, 50)
                 cb = fig.colorbar(c)
                 cb.ax.set_ylabel('[$cm^{-3}$]')
-                ax.set_title('Mean Neutral Density')
+                ax.set_title('Mean Neutral Density. NB {}'.format(self.beam_name))
                 canvas.show()
 
 class Viewer:
@@ -694,7 +722,7 @@ class Viewer:
     def __init__(self, parent):
 
         self.load_dir()
-        parent.title('FIDAviewer')
+        parent.title('FIDAviewer. {}'.format(self.dir))
 
         #Make MenuBar
         self.MenuBar = tk.Menu(parent)
@@ -728,7 +756,7 @@ class Viewer:
         #Spectra Frame
         if self.spec._has_spectra:
             ttk.Combobox(self.spectra_frame, textvariable = self.spec.chan,
-                         values = tuple(self.spec.channels.keys())).pack()
+                         values = list(self.spec.channels.keys())).pack()
 
             ttk.Checkbutton(self.spectra_frame, text = 'Hide NBI', variable = self.spec.nbi_on,
                             onvalue = False, offvalue = True).pack()
@@ -747,15 +775,20 @@ class Viewer:
 
             ttk.Button(self.spectra_frame,text = 'Plot Intensity',\
             	        command = (lambda: self.spec.plot_intensity(self.fig,self.canvas))).pack(side = tk.TOP,expand = tk.Y,fill = tk.BOTH)
+        else:
+            ttk.Label(self.spectra_frame, text = '\n\nNo spectral data found').pack()
 
         #NPA Frame
         if self.npa._has_npa:
-        	ttk.Combobox(self.npa_frame,textvariable = self.npa.chan,\
-            	values = tuple(self.npa.channels.keys())).pack()
-        	ttk.Button(self.npa_frame,text = 'Plot Neutral Birth',\
-            	command = (lambda: self.npa.plot_neutral_birth(self.fig,self.canvas))).pack(side = tk.TOP,expand = tk.Y,fill = tk.BOTH)
-        	ttk.Button(self.npa_frame,text = 'Plot Flux',\
-            	command = (lambda: self.npa.plot_flux(self.fig,self.canvas))).pack(side = tk.TOP,expand = tk.Y,fill = tk.BOTH)
+            ttk.Combobox(self.npa_frame, textvariable = self.npa.chan, values = tuple(self.npa.channels.keys())).pack()
+
+            ttk.Button(self.npa_frame, text = 'Plot Neutral Birth',\
+                       command = (lambda: self.npa.plot_neutral_birth(self.fig, self.canvas))).pack(side = tk.TOP, expand = tk.Y,fill = tk.BOTH)
+
+            ttk.Button(self.npa_frame, text = 'Plot Flux',\
+                       command = (lambda: self.npa.plot_flux(self.fig, self.canvas))).pack(side = tk.TOP,expand = tk.Y, fill = tk.BOTH)
+        else:
+            ttk.Label(self.npa_frame, text = '\n\nNo NPA data found').pack()
 
         #Neutrals Frame
         ttk.Radiobutton(self.neutrals_frame,text = 'Density vs X',variable = self.neut.plot_type,value = 'X').pack()
@@ -767,36 +800,40 @@ class Viewer:
 
 
         ttk.Checkbutton(self.neutrals_frame,text = 'Use Machine Coordinates', variable = self.neut.use_mach_coords,\
-            onvalue = True,offvalue = False).pack()
+                        onvalue = True,offvalue = False).pack()
         ttk.Checkbutton(self.neutrals_frame,text = 'Hide Full', variable = self.neut.full_on,\
-            onvalue = False,offvalue = True).pack()
+                        onvalue = False,offvalue = True).pack()
         ttk.Checkbutton(self.neutrals_frame,text = 'Hide Half', variable = self.neut.half_on,\
-            onvalue = False,offvalue = True).pack()
+                        onvalue = False,offvalue = True).pack()
         ttk.Checkbutton(self.neutrals_frame,text = 'Hide Third', variable = self.neut.third_on,\
-            onvalue = False,offvalue = True).pack()
+                        onvalue = False,offvalue = True).pack()
         ttk.Checkbutton(self.neutrals_frame,text = 'Hide Halo', variable = self.neut.halo_on,\
-            onvalue = False,offvalue = True).pack()
+                        onvalue = False,offvalue = True).pack()
 
         ttk.Button(self.neutrals_frame,text = 'Plot',\
-            command = (lambda: self.neut.plot_neutrals(self.fig,self.canvas))).pack(expand = tk.Y,fill = tk.BOTH)
+                   command = (lambda: self.neut.plot_neutrals(self.fig,self.canvas))).pack(expand = tk.Y,fill = tk.BOTH)
 
         #Weights Frame
         if self.wght._has_fida_wght:
-        	ttk.Combobox(self.weights_frame,textvariable = self.wght.fida_chan,\
-            	values = tuple(self.wght.fida_chans.keys())).pack()
+            ttk.Combobox(self.weights_frame,textvariable = self.wght.fida_chan,\
+                         values = tuple(self.wght.fida_chans.keys())).pack()
 
-        	tk.Scale(self.weights_frame,orient = tk.HORIZONTAL,length = 200,\
-            	from_ = self.wght.wl_min,to = self.wght.wl_max,resolution = self.wght.dlam,variable = self.wght.lam_val).pack()
+            tk.Scale(self.weights_frame,orient = tk.HORIZONTAL,length = 200,\
+                     from_ = self.wght.wl_min,to = self.wght.wl_max,resolution = self.wght.dlam,variable = self.wght.lam_val).pack()
 
-        	ttk.Button(self.weights_frame,text = 'Plot FIDA Weights',\
-            	command = (lambda: self.wght.plot_fida_weights(self.fig,self.canvas))).pack(side = tk.TOP,expand = tk.Y,fill = tk.BOTH)
+            ttk.Button(self.weights_frame,text = 'Plot FIDA Weights',\
+                       command = (lambda: self.wght.plot_fida_weights(self.fig,self.canvas))).pack(side = tk.TOP,expand = tk.Y,fill = tk.BOTH)
+        else:
+            ttk.Label(self.weights_frame, text = '\n\nNo FIDA weight data found').pack()
 
         if self.wght._has_npa_wght:
-        	ttk.Combobox(self.weights_frame,textvariable = self.wght.npa_chan,\
-            	values = tuple(self.wght.npa_chans.keys())).pack()
+            ttk.Combobox(self.weights_frame,textvariable = self.wght.npa_chan,\
+                         values = tuple(self.wght.npa_chans.keys())).pack()
 
-        	ttk.Button(self.weights_frame,text = 'Plot NPA Weights',\
-            	command = (lambda: self.wght.plot_npa_weights(self.fig,self.canvas))).pack(side = tk.TOP,expand = tk.Y,fill = tk.BOTH)
+            ttk.Button(self.weights_frame,text = 'Plot NPA Weights',\
+                       command = (lambda: self.wght.plot_npa_weights(self.fig,self.canvas))).pack(side = tk.TOP,expand = tk.Y,fill = tk.BOTH)
+        else:
+            ttk.Label(self.weights_frame, text = '\n\nNo NPA weight data found').pack()
 
     def load_nml(self, dir):
         nml = f90nml.read(glob.glob(dir + '*_inputs.dat')[0])['fidasim_inputs']
@@ -807,6 +844,7 @@ class Viewer:
         self.dir = askdirectory()
         if self.dir == '': self.dir = os.getcwd()
         if self.dir[-1] != '/': self.dir += '/'
+#        if self.dir[-1] != os.path.sep: self.dir += os.path.sep
 
         self.nml = self.load_nml(self.dir)
         self.spec = Spectra(self.dir, self.nml)
