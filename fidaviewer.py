@@ -18,6 +18,8 @@ import collections
 """
 Todo
 ----
+* add validation of wavelength min and max to not be beyond data
+* take units from files, don't hardcode
 * in taking mean of beam densities, should it only be for non-zero elements?
 * optimize: can more stuff be loaded only when used? can more stuff be saved and not recalculated (ie set/get)?
 * option to change volume element in neutral plotting for better fidelity in going from beam to mach coords
@@ -80,8 +82,10 @@ class Spectra:
             self.lam = spec['lambda']
             self.nchan = spec['nchan']
             self.channels = collections.OrderedDict(('Channel ' + str(i + 1), i) for i in range(self.nchan))
-            self.wl_min = np.min(self.lam)
-            self.wl_max = np.max(self.lam)
+#            self.wl_min = np.min(self.lam)
+#            self.wl_max = np.max(self.lam)
+            self.wl_min = tk.StringVar(value = str(np.min(self.lam)))
+            self.wl_max = tk.StringVar(value = str(np.max(self.lam)))
             self.dlam = np.abs(self.lam[1] - self.lam[0])
             self.chan = tk.StringVar(value = 'Channel 1')
             self.nbi_on = tk.BooleanVar(value = nml['calc_bes'] > 0)
@@ -90,6 +94,8 @@ class Spectra:
             self.legend_on = tk.BooleanVar(value = True)
             if self.brems_on.get():
                 self.brems = spec['brems']
+            else:
+                self.brems = None
             if self.fida_on.get():
                 self.fida = spec['fida']
             if self.nbi_on.get():
@@ -97,6 +103,8 @@ class Spectra:
                 self.half = spec['half']
                 self.third = spec['third']
                 self.halo = spec['halo']
+            else:
+                self.full = None
         else:
             print('No spectra found')
 
@@ -109,19 +117,25 @@ class Spectra:
             ax = fig.add_subplot(111)
 
             if self.brems_on.get():
-                brems = self.brems[ch, :]
-                ax.plot(lam, brems, label = 'Brems')
+                if self.brems is None:
+                    print('No brems spectral data found')
+                else:
+                    brems = self.brems[ch, :]
+                    ax.plot(lam, brems, label = 'Brems')
 
             if self.nbi_on.get():
-                full = self.full[ch, :]
-                half = self.half[ch, :]
-                third = self.third[ch, :]
-                halo = self.halo[ch, :]
+                if self.full is None:
+                    print('No beam spectral data found')
+                else:
+                    full = self.full[ch, :]
+                    half = self.half[ch, :]
+                    third = self.third[ch, :]
+                    halo = self.halo[ch, :]
 
-                ax.plot(lam, full, label = 'Full')
-                ax.plot(lam, half, label = 'Half')
-                ax.plot(lam, third, label = 'Third')
-                ax.plot(lam, halo, label = 'Halo')
+                    ax.plot(lam, full, label = 'Full')
+                    ax.plot(lam, half, label = 'Half')
+                    ax.plot(lam, third, label = 'Third')
+                    ax.plot(lam, halo, label = 'Halo')
 
             if self.fida_on.get():
                 fida = self.fida[ch, :]
@@ -133,6 +147,7 @@ class Spectra:
                 ax.set_xlabel('Wavelength [nm]')
                 ax.set_ylabel('$Ph\ /\ (s\ nm\ sr\ m^2)$')
                 ax.set_title(self.chan.get())
+                ax.set_xlim([float(self.wl_min.get()), float(self.wl_max.get())])
                 canvas.show()
             else:
                 print('SPECTRA: No Spectra Selected')
@@ -141,8 +156,10 @@ class Spectra:
 
     def plot_intensity(self, fig, canvas):
         if self._has_spectra:
-            w1 = (self.lam >= self.wl_min)
-            w2 = (self.lam <= self.wl_max)
+#            w1 = (self.lam >= self.wl_min)
+#            w2 = (self.lam <= self.wl_max)
+            w1 = (self.lam >= float(self.wl_min.get()))
+            w2 = (self.lam <= float(self.wl_max.get()))
             w = np.logical_and(w1, w2)
             intens = np.sum(self.fida[:, w], axis = 1) * self.dlam
             ch = range(1, len(intens) + 1)
@@ -762,19 +779,25 @@ class Viewer:
                             onvalue = False, offvalue = True).pack()
 
             ttk.Checkbutton(self.spectra_frame,text = 'Hide FIDA', variable = self.spec.fida_on,
-                            onvalue = False,offvalue = True).pack()
+                            onvalue = False, offvalue = True).pack()
 
-            ttk.Checkbutton(self.spectra_frame,text = 'No Bremsstrahlung', variable = self.spec.brems_on,\
-            	             onvalue = False,offvalue = True).pack()
+            ttk.Checkbutton(self.spectra_frame,text = 'Hide Bremsstrahlung', variable = self.spec.brems_on,\
+            	             onvalue = False, offvalue = True).pack()
 
-            ttk.Checkbutton(self.spectra_frame,text = 'Hide Legend', variable = self.spec.legend_on,\
-            	             onvalue = False,offvalue = True).pack()
+            ttk.Checkbutton(self.spectra_frame, text = 'Hide Legend', variable = self.spec.legend_on,\
+            	             onvalue = False, offvalue = True).pack()
 
-            ttk.Button(self.spectra_frame,text = 'Plot Spectra',\
-            	        command = (lambda: self.spec.plot_spectra(self.fig,self.canvas))).pack(side = tk.TOP,expand = tk.Y,fill = tk.BOTH)
+            ttk.Label(self.spectra_frame, text = 'Wavelength Min.').pack()
+            ttk.Entry(self.spectra_frame, textvariable = self.spec.wl_min, state = tk.NORMAL, width = 10).pack()
+
+            ttk.Label(self.spectra_frame, text = 'Wavelength Max.').pack()
+            ttk.Entry(self.spectra_frame, textvariable = self.spec.wl_max, state = tk.NORMAL, width = 10).pack()
+
+            ttk.Button(self.spectra_frame, text = 'Plot Spectra',\
+            	        command = (lambda: self.spec.plot_spectra(self.fig, self.canvas))).pack(side = tk.TOP, expand = tk.Y, fill = tk.BOTH)
 
             ttk.Button(self.spectra_frame,text = 'Plot Intensity',\
-            	        command = (lambda: self.spec.plot_intensity(self.fig,self.canvas))).pack(side = tk.TOP,expand = tk.Y,fill = tk.BOTH)
+            	        command = (lambda: self.spec.plot_intensity(self.fig, self.canvas))).pack(side = tk.TOP, expand = tk.Y, fill = tk.BOTH)
         else:
             ttk.Label(self.spectra_frame, text = '\n\nNo spectral data found').pack()
 
@@ -818,8 +841,8 @@ class Viewer:
             ttk.Combobox(self.weights_frame,textvariable = self.wght.fida_chan,\
                          values = tuple(self.wght.fida_chans.keys())).pack()
 
-            tk.Scale(self.weights_frame,orient = tk.HORIZONTAL,length = 200,\
-                     from_ = self.wght.wl_min,to = self.wght.wl_max,resolution = self.wght.dlam,variable = self.wght.lam_val).pack()
+            tk.Scale(self.weights_frame,orient = tk.HORIZONTAL, length = 200,\
+                     from_ = self.wght.wl_min, to = self.wght.wl_max, resolution = self.wght.dlam, variable = self.wght.lam_val).pack()
 
             ttk.Button(self.weights_frame,text = 'Plot FIDA Weights',\
                        command = (lambda: self.wght.plot_fida_weights(self.fig,self.canvas))).pack(side = tk.TOP,expand = tk.Y,fill = tk.BOTH)
