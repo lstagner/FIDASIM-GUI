@@ -1,16 +1,14 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 import sys
 import os
 import glob
-#import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
-#from scipy.io import netcdf
 import numpy as np
 import tkinter as tk
 from tkinter.filedialog import askdirectory
-#from tkinter import *
 from tkinter import ttk
 import h5py
 import f90nml
@@ -39,36 +37,33 @@ Todo
 * DONE - Make brems separate signal and stop adding to other spectra
 """
 
-def load_dict_from_hdf5(filename):
+def load_dict_from_hdf5(h5_filepath):
     """
     Load h5 file as a dict
     """
-    with h5py.File(filename, 'r') as h5file:
-        return recursively_load_dict_contents_from_group(h5file, '/')
+    def recursively_load_dict_contents_from_group(h5_obj, path):
+        """
+        Recursively load a dict from h5 file
+        """
+        ans = {}
+        for key, item in h5_obj[path].items():
+            if isinstance(item, h5py._hl.dataset.Dataset):
+                ans[key] = item.value
+            elif isinstance(item, h5py._hl.group.Group):
+                ans[key] = recursively_load_dict_contents_from_group(h5_obj, path + key + '/')
+        return ans
 
-
-def recursively_load_dict_contents_from_group(h5file, path):
-    """
-    Recursively load a dict from h5 file
-    """
-    ans = {}
-    for key, item in h5file[path].items():
-        if isinstance(item, h5py._hl.dataset.Dataset):
-            ans[key] = item.value
-        elif isinstance(item, h5py._hl.group.Group):
-            ans[key] = recursively_load_dict_contents_from_group(h5file, path + key + '/')
-    return ans
+    with h5py.File(h5_filepath, 'r') as h5_obj:
+        return recursively_load_dict_contents_from_group(h5_obj, '/')
 
 
 class Spectra:
     """ Spectra object that contains plot methods and parameters"""
     def __init__(self, dir, nml):
         spec_files = glob.glob(dir + '*_spectra.h5')
-#        self._has_spectra = True if glob.glob(dir + '*_spectra.h5') else False
         self._has_spectra = (len(spec_files) > 0)
 
         if self._has_spectra:
-#            spec_files = glob.glob(dir + '*_spectra.h5')
 
             print('Loading spectra')
 
@@ -79,41 +74,19 @@ class Spectra:
 
             self.lam = spec['lambda']
             self.nchan = spec['nchan']
-
-#            if nml['calc_brems']:
-#                self.brems = spec['brems']
-#            if nml['calc_fida']:
-#                self.fida = spec['fida']
-#            if nml['calc_bes']:
-#                self.full = spec['full']
-#                self.half = spec['half']
-#                self.third = spec['third']
-#                self.halo = spec['halo']
-
-#            self.channels = dict(('Channel ' + str(i + 1), i) for i in range(0, self.brems.shape[0]))
             self.channels = dict(('Channel ' + str(i + 1), i) for i in range(self.nchan))
             self.wl_min = np.min(self.lam)
             self.wl_max = np.max(self.lam)
             self.dlam = np.abs(self.lam[1] - self.lam[0])
-
             self.chan = tk.StringVar(value = 'Channel 1')
             self.nbi_on = tk.BooleanVar(value = nml['calc_bes'] > 0)
             self.fida_on = tk.BooleanVar(value = nml['calc_fida'] > 0)
             self.brems_on = tk.BooleanVar(value = nml['calc_brems'] > 0)
             self.legend_on = tk.BooleanVar(value = True)
-
-#            if sum(self.full[0, :]) ! = 0:
-#                self.nbi_on.set(True)
-
-#            if sum(self.fida[0, :]) ! = 0:
-#                self.fida_on.set(True)
-
             if self.brems_on.get():
                 self.brems = spec['brems']
-
             if self.fida_on.get():
                 self.fida = spec['fida']
-
             if self.nbi_on.get():
                 self.full = spec['full']
                 self.half = spec['half']
@@ -124,11 +97,6 @@ class Spectra:
         if self._has_spectra:
             ch = self.channels[self.chan.get()]
             lam = self.lam
-
-#            if self.brems_on.get():
-#                brems = self.brems[ch, :]
-#            else:
-#                brems = 0.0
 
             fig.clf()
             ax = fig.add_subplot(111)
@@ -184,14 +152,9 @@ class Spectra:
 class NPA:
     """ NPA object that contains plot methods and parameters"""
     def __init__(self,dir):
-#        self._has_npa = True if glob.glob(dir + '*_npa.h5') else False
-#        self._has_wght = True if glob.glob(dir + '*_npa_weights.h5') else False
-#        self._has_neut = True if glob.glob(dir + '*_neutrals.h5') else False
-#        self._has_geo = True if glob.glob(dir + '*_inputs.h5') else False
         npa_files = glob.glob(dir + '*_npa.h5')
         wght_files = glob.glob(dir + '*_npa_weights.h5')
         neut_files = glob.glob(dir + '*_neutrals.h5')
-#        geo_files = glob.glob(dir + '*_geometry.h5')
 
         self._has_npa = (len(npa_files) > 0)
         self._has_wght = (len(wght_files) > 0)
@@ -205,20 +168,14 @@ class NPA:
             else:
                 npa = load_dict_from_hdf5(npa_files[0])
 
-#            npa = load_dict_from_hdf5(glob.glob(dir + '*_npa.h5')[0])
-
             self.npa_energy = npa['energy']
             self.npa_flux = npa['flux']
-#            self.ipos = npa['ipos']
-#            self.count = npa['count']
 
         if self._has_wght:
             if len(wght_files) > 1:
                 raise NotImplementedError('Multiple NPA weight files found')
             else:
                 wght = load_dict_from_hdf5(wght_files[0])
-
-#            wght = load_dict_from_hdf5(glob.glob(dir + '*_npa_weights.h5')[0])
 
             self.w_energy = wght['energy']
             self.w_flux = wght['flux']
@@ -228,8 +185,6 @@ class NPA:
                 raise NotImplementedError('Multiple neutrals files found')
             else:
                 neut = load_dict_from_hdf5(neut_files[0])
-
-#            neut = load_dict_from_hdf5(glob.glob(dir + '*_neutrals.h5')[0])
 
             self.dens = neut['fdens'].sum(0).sum(0) + neut['hdens'].sum(0).sum(0) + \
                         neut['tdens'].sum(0).sum(0) + neut['halodens'].sum(0).sum(0)
@@ -246,7 +201,7 @@ class NPA:
 #            self.ylens = geo['ylens'][w]
 
         if (self._has_npa or self._has_wght):
-            self.channels = dict(('Channel ' + str(i + 1), i) for i in range(0, 3))  # should be nchan???
+            self.channels = dict(('Channel ' + str(i + 1), i) for i in range(0, 3))  # should it be nchan not 3???
 
         self.chan = tk.StringVar(value = 'Channel 1')
 
@@ -255,19 +210,20 @@ class NPA:
             fig.clf()
             ax = fig.add_subplot(111)
             ch = self.channels[self.chan.get()]
-#            if self._has_neut and self._has_geo:
+
             if self._has_neut:
                 ax.plot(self.x_grid[0,:,:],self.y_grid[0,:,:],'k,')
                 ax.contour(self.x_grid[0,:,:],self.y_grid[0,:,:],self.dens,20)
                 ax.plot([self.xlos[ch],self.xlens[ch]],[self.ylos[ch],self.ylens[ch]],'k')
-#            ax.plot(self.ipos[ch,0,0:self.count[ch]],self.ipos[ch,1,0:self.count[ch]],'k,',alpha = .3)
+
             ax.set_title('Neutral Birth Position')
             ax.set_xlim(min(self.x_grid[0,0,:]) ,max(self.x_grid[0,0,:]))
             ax.set_ylim(min(self.y_grid[0,:,0]),max(self.y_grid[0,:,0]))
             ax.set_xlabel('x [cm]')
             ax.set_ylabel('y [cm]')
             canvas.show()
-        else: print('NPA: No file')
+        else:
+            print('NPA: No file')
 
     def plot_flux(self,fig,canvas):
         if self._has_npa or self._has_wght:
@@ -289,8 +245,6 @@ class NPA:
 class Weights:
     """ Weights object that contains plot methods and parameters"""
     def __init__(self,dir):
-#        self._has_npa_wght = True if glob.glob(dir + '*_npa_weights.h5') else False
-#        self._has_fida_wght = True if glob.glob(dir + '*_fida_weights.h5') else False
         npa_wght_files = glob.glob(dir + '*_npa_weights.h5')
         fida_wght_files = glob.glob(dir + '*_fida_weights.h5')
 
@@ -358,22 +312,17 @@ class Weights:
 class Neutrals:
     """ Neutrals object that contains plot methods and parameters"""
     def __init__(self ,dir):
-#        self._has_neut = True if glob.glob(dir + '*_neutrals.h5') else False
-#        self._has_geo = True if glob.glob(dir + '*_geometry.h5') else False
         neut_files = glob.glob(dir + '*_neutrals.h5')
 
         self._has_neut = (len(neut_files) > 0)
 
-#        if self._has_neut and self._has_geo:
         if self._has_neut:
             print('Loading neutrals')
             if len(neut_files) > 1:
                 raise NotImplementedError('Multiple neutrals files found')
             else:
                 neut = load_dict_from_hdf5(neut_files[0])
-#            neut = load_dict_from_hdf5(glob.glob(dir + '*_neutrals.h5')[0])
-#            geo = load_dict_from_hdf5(glob.glob(dir + '*_geometry.h5')[0])  #,vars = ['x_grid','y_grid','z_grid','u_grid','v_grid','w_grid'])
-#            print(neut['fdens'].shape)
+
             # All grids and gridded data to --> (nx, ny, nz)
             self.fdens = neut['fdens'].sum(3).T   # sum over energy state
             self.hdens = neut['hdens'].sum(3).T
@@ -382,9 +331,6 @@ class Neutrals:
             self.x_grid = neut['grid']['x_grid'].T     # mach coords
             self.y_grid = neut['grid']['y_grid'].T     # mach coords
             self.z_grid = neut['grid']['z_grid'].T     # mach coords
-#            self.x_grid = neut['grid']['x']          # beam coords
-#            self.y_grid = neut['grid']['y']          # beam coords
-#            self.z_grid = neut['grid']['z']          # beam coords
 
             # beam coords
             self.x_grid_beam, self.y_grid_beam, self.z_grid_beam = np.meshgrid(neut['grid']['x'], neut['grid']['y'], neut['grid']['z'], indexing='ij')
@@ -406,7 +352,6 @@ class Neutrals:
         halo_on = self.halo_on.get()
         torf = lambda T: 1 if T else 0
 
-#        if (self._has_neut and self._has_geo) and (full_on or half_on or third_on or halo_on):
         if self._has_neut and (full_on or half_on or third_on or halo_on):
             fig.clf()
             ax = fig.add_subplot(111)
@@ -424,17 +369,6 @@ class Neutrals:
                 hdens = self.hdens.sum(1).sum(1)
                 tdens = self.tdens.sum(1).sum(1)
                 halodens = self.halodens.sum(1).sum(1)
-#                if full_on:
-#                    ax.plot(x, fdens, label = 'Full')
-#
-#                if half_on:
-#                    ax.plot(x,hdens,label = 'Half')
-#
-#                if third_on:
-#                    ax.plot(x,tdens,label = 'Third')
-#
-#                if halo_on:
-#                    ax.plot(x,halodens,label = 'Halo')
                 if full_on: ax.plot(x,fdens,label = 'Full')
                 if half_on: ax.plot(x,hdens,label = 'Half')
                 if third_on: ax.plot(x,tdens,label = 'Third')
