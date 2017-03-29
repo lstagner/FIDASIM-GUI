@@ -19,17 +19,24 @@ import f90nml
 """
 Todo
 ----
-* use f90nml python package to parse the fortran namelist file and find what was and wasn't calculated
+* DONE - change xyz to uvw and vise versa in Neutrals
 * rerun sample file sim setting all bools to true
-* check for multiple matching filenames
-* DONE - what is .get() business? This is tk setter/getter feature
-* Make brems separate signal and stop adding to other spectra
+* implement multiple matching filenames
 * Make wl_min and wl_max changeable
 * dlam, wl_min, wl_max being rewritten by Weights
 * assure neutral plots are binning before projecting
 * use histogram2d when ~np.array_equal(x, uniq(x_grid)), etc. ie beam coords != mach coords
 * get more intellegent h5 reader to just grab what's needed
 * neutral density legend units
+* NPA needs work. I haven't used NPA data before - NGB
+* currently seems to load neutrals (more?) twice. check this and fix
+* how to sort channels in drop down box?
+* add another tab to gui "Imaging" w/ "Lens" drop down. Choose spectra and wavelength range to integrate and make contour
+* desplay msg like "No NPA file found" under each tab for clarity
+* DONE - use f90nml python package to parse the fortran namelist file and find what was and wasn't calculated
+* DONE - check for multiple matching filenames
+* DONE - what is .get() business? This is tk setter/getter feature
+* DONE - Make brems separate signal and stop adding to other spectra
 """
 
 def load_dict_from_hdf5(filename):
@@ -181,28 +188,51 @@ class NPA:
 #        self._has_wght = True if glob.glob(dir + '*_npa_weights.h5') else False
 #        self._has_neut = True if glob.glob(dir + '*_neutrals.h5') else False
 #        self._has_geo = True if glob.glob(dir + '*_inputs.h5') else False
-        self._has_npa = True if glob.glob(dir + '*_npa.h5') else False
-        self._has_wght = True if glob.glob(dir + '*_npa_weights.h5') else False
-        self._has_neut = True if glob.glob(dir + '*_neutrals.h5') else False
-        self._has_geo = True if glob.glob(dir + '*_geometry.h5') else False
+        npa_files = glob.glob(dir + '*_npa.h5')
+        wght_files = glob.glob(dir + '*_npa_weights.h5')
+        neut_files = glob.glob(dir + '*_neutrals.h5')
+#        geo_files = glob.glob(dir + '*_geometry.h5')
+
+        self._has_npa = (len(npa_files) > 0)
+        self._has_wght = (len(wght_files) > 0)
+        self._has_neut = (len(neut_files) > 0)
 
         if self._has_npa:
             print('Loading NPA')
-            npa = load_dict_from_hdf5(glob.glob(dir + '*_npa.h5')[0])
+
+            if len(npa_files) > 1:
+                raise NotImplementedError('Multiple NPA files found')
+            else:
+                npa = load_dict_from_hdf5(npa_files[0])
+
+#            npa = load_dict_from_hdf5(glob.glob(dir + '*_npa.h5')[0])
+
             self.npa_energy = npa['energy']
             self.npa_flux = npa['flux']
 #            self.ipos = npa['ipos']
 #            self.count = npa['count']
 
         if self._has_wght:
-            wght = load_dict_from_hdf5(glob.glob(dir + '*_npa_weights.h5')[0])
+            if len(wght_files) > 1:
+                raise NotImplementedError('Multiple NPA weight files found')
+            else:
+                wght = load_dict_from_hdf5(wght_files[0])
+
+#            wght = load_dict_from_hdf5(glob.glob(dir + '*_npa_weights.h5')[0])
+
             self.w_energy = wght['energy']
             self.w_flux = wght['flux']
 
         if self._has_neut:
-            neut = load_dict_from_hdf5(glob.glob(dir + '*_neutrals.h5')[0])
-            self.dens = neut['fdens'].sum(0).sum(0)+neut['hdens'].sum(0).sum(0)+\
-                      neut['tdens'].sum(0).sum(0)+neut['halodens'].sum(0).sum(0)
+            if len(neut_files) > 1:
+                raise NotImplementedError('Multiple neutrals files found')
+            else:
+                neut = load_dict_from_hdf5(neut_files[0])
+
+#            neut = load_dict_from_hdf5(glob.glob(dir + '*_neutrals.h5')[0])
+
+            self.dens = neut['fdens'].sum(0).sum(0) + neut['hdens'].sum(0).sum(0) + \
+                        neut['tdens'].sum(0).sum(0) + neut['halodens'].sum(0).sum(0)
 
 #        if self._has_geo:
 #            geo = load_dict_from_hdf5(glob.glob(dir + '*_geometry.h5')[0])  #,vars = ['x_grid','y_grid','xlos','ylos','xlens','ylens','chan_id'])
@@ -216,16 +246,17 @@ class NPA:
 #            self.ylens = geo['ylens'][w]
 
         if (self._has_npa or self._has_wght):
-            self.channels = dict(('Channel '+str(i+1),i) for i in range(0,3))
+            self.channels = dict(('Channel ' + str(i + 1), i) for i in range(0, 3))  # should be nchan???
 
         self.chan = tk.StringVar(value = 'Channel 1')
 
-    def plot_neutral_birth(self,fig,canvas):
+    def plot_neutral_birth(self, fig, canvas):
         if self._has_npa:
             fig.clf()
             ax = fig.add_subplot(111)
             ch = self.channels[self.chan.get()]
-            if self._has_neut and self._has_geo:
+#            if self._has_neut and self._has_geo:
+            if self._has_neut:
                 ax.plot(self.x_grid[0,:,:],self.y_grid[0,:,:],'k,')
                 ax.contour(self.x_grid[0,:,:],self.y_grid[0,:,:],self.dens,20)
                 ax.plot([self.xlos[ch],self.xlens[ch]],[self.ylos[ch],self.ylens[ch]],'k')
@@ -258,11 +289,19 @@ class NPA:
 class Weights:
     """ Weights object that contains plot methods and parameters"""
     def __init__(self,dir):
-        self._has_npa_wght = True if glob.glob(dir + '*_npa_weights.h5') else False
-        self._has_fida_wght = True if glob.glob(dir + '*_fida_weights.h5') else False
+#        self._has_npa_wght = True if glob.glob(dir + '*_npa_weights.h5') else False
+#        self._has_fida_wght = True if glob.glob(dir + '*_fida_weights.h5') else False
+        npa_wght_files = glob.glob(dir + '*_npa_weights.h5')
+        fida_wght_files = glob.glob(dir + '*_fida_weights.h5')
+
+        self._has_npa_wght = (len(npa_wght_files) > 0)
+        self._has_fida_wght = (len(fida_wght_files) > 0)
 
         if self._has_fida_wght:
-            fida = load_dict_from_hdf5(glob.glob(dir + '*_fida_weights.h5')[0])
+            if len(npa_wght_files) > 1:
+                raise NotImplementedError('Multiple FIDA weight files found')
+            else:
+                fida = load_dict_from_hdf5(fida_wght_files[0])
             self.f_energy = fida['energy']
             self.f_pitch = fida['pitch']
             self.lam = fida['lambda']
@@ -275,13 +314,16 @@ class Weights:
             self.fida_chans = dict(('Channel '+str(i+1),i) for i in range(0,self.f_chan))
 
         if self._has_npa_wght:
-            npa = load_dict_from_hdf5(glob.glob(dir + '*_npa_weights.h5')[0])
+            if len(npa_wght_files) > 1:
+                raise NotImplementedError('Multiple NPA weight files found')
+            else:
+                npa = load_dict_from_hdf5(npa_wght_files[0])
             self.n_energy = npa['energy']
             self.n_pitch = npa['pitch']
             self.n_wght = npa['weight']
             self.n_rad = npa['radius']
-            self.n_chan = len(self.n_rad)
-            self.npa_chans = dict(('Channel ' + str(i + 1), i) for i in range(0, self.n_chan))
+            self.n_nchan = npa['nchan']  #len(self.n_rad)
+            self.npa_chans = dict(('Channel ' + str(i + 1), i) for i in range(0, self.n_nchan))
 
         self.lam_val = tk.DoubleVar(value = 655.0)
         self.fida_chan = tk.StringVar(value = 'Channel 1')
@@ -337,21 +379,21 @@ class Neutrals:
             self.hdens = neut['hdens'].sum(3).T
             self.tdens = neut['tdens'].sum(3).T
             self.halodens = neut['halodens'].sum(3).T
-            self.u_grid = neut['grid']['x_grid'].T     # mach coords
-            self.v_grid = neut['grid']['y_grid'].T     # mach coords
-            self.w_grid = neut['grid']['z_grid'].T     # mach coords
+            self.x_grid = neut['grid']['x_grid'].T     # mach coords
+            self.y_grid = neut['grid']['y_grid'].T     # mach coords
+            self.z_grid = neut['grid']['z_grid'].T     # mach coords
 #            self.x_grid = neut['grid']['x']          # beam coords
 #            self.y_grid = neut['grid']['y']          # beam coords
 #            self.z_grid = neut['grid']['z']          # beam coords
 
             # beam coords
-            self.x_grid, self.y_grid, self.z_grid = np.meshgrid(neut['grid']['x'], neut['grid']['y'], neut['grid']['z'], indexing='ij')
+            self.x_grid_beam, self.y_grid_beam, self.z_grid_beam = np.meshgrid(neut['grid']['x'], neut['grid']['y'], neut['grid']['z'], indexing='ij')
 
         ##Radio Buttons Variable
         self.plot_type = tk.StringVar(value = 'XY')
 
         ##Checkbox Variables
-        self.use_uvw = tk.BooleanVar(value = False)
+        self.use_mach_coords = tk.BooleanVar(value = False)
         self.full_on = tk.BooleanVar(value = True)
         self.half_on = tk.BooleanVar(value = True)
         self.third_on = tk.BooleanVar(value = True)
@@ -371,11 +413,11 @@ class Neutrals:
             pt = self.plot_type.get()
 
             if pt == 'X':
-                if self.use_uvw.get():
-                    x = self.u_grid[:, 0, 0]
+                if self.use_mach_coords.get():
+                    x = self.x_grid[:, 0, 0]
                     ax.set_xlabel('X [cm]')
                 else:
-                    x = self.x_grid[:, 0, 0]
+                    x = self.x_grid_beam[:, 0, 0]
                     ax.set_xlabel('$X_{beam}$ [cm]')
 
                 fdens = self.fdens.sum(1).sum(1)
@@ -403,11 +445,11 @@ class Neutrals:
                 canvas.show()
 
             if pt == 'Y':
-                if self.use_uvw.get():
-                    x = self.v_grid[0, :, 0]
+                if self.use_mach_coords.get():
+                    x = self.y_grid[0, :, 0]
                     ax.set_xlabel('Y [cm]')
                 else:
-                    x = self.y_grid[0, :, 0]
+                    x = self.y_grid_beam[0, :, 0]
                     ax.set_xlabel('$Y_{beam}$ [cm]')
                 fdens = self.fdens.sum(0).sum(1)
                 hdens = self.hdens.sum(0).sum(1)
@@ -423,11 +465,11 @@ class Neutrals:
                 canvas.show()
 
             if pt == 'Z':
-                if self.use_uvw.get():
-                    x = self.w_grid[0, 0, :]
+                if self.use_mach_coords.get():
+                    x = self.z_grid[0, 0, :]
                     ax.set_xlabel('Z [cm]')
                 else:
-                    x = self.z_grid[0, 0, :]
+                    x = self.z_grid_beam[0, 0, :]
                     ax.set_xlabel('$Z_{beam}$ [cm]')
                 fdens = self.fdens.sum(0).sum(0)
                 hdens = self.hdens.sum(0).sum(0)
@@ -443,14 +485,14 @@ class Neutrals:
                 canvas.show()
 
             if pt == 'XY':
-                if self.use_uvw.get():
-                    x = self.u_grid[:, :, 0]
-                    y = self.v_grid[:, :, 0]
+                if self.use_mach_coords.get():
+                    x = self.x_grid[:, :, 0]
+                    y = self.y_grid[:, :, 0]
                     ax.set_xlabel('X [cm]')
                     ax.set_ylabel('Y [cm]')
                 else:
-                    x = self.x_grid[:, :, 0]
-                    y = self.y_grid[:, :, 0]
+                    x = self.x_grid_beam[:, :, 0]
+                    y = self.y_grid_beam[:, :, 0]
                     ax.set_xlabel('$X_{beam}$ [cm]')
                     ax.set_ylabel('$Y_{beam}$ [cm]')
 
@@ -467,14 +509,14 @@ class Neutrals:
                 canvas.show()
 
             if pt == 'XZ':
-                if self.use_uvw.get():
-                    x = self.u_grid[:, 0, :]
-                    y = self.w_grid[:, 0, :]
+                if self.use_mach_coords.get():
+                    x = self.x_grid[:, 0, :]
+                    y = self.z_grid[:, 0, :]
                     ax.set_xlabel('X [cm]')
                     ax.set_ylabel('Z [cm]')
                 else:
-                    x = self.x_grid[:, 0, :]
-                    y = self.z_grid[:, 0, :]
+                    x = self.x_grid_beam[:, 0, :]
+                    y = self.z_grid_beam[:, 0, :]
                     ax.set_xlabel('$X_{beam}$ [cm]')
                     ax.set_ylabel('$Z_{beam}$ [cm]')
 
@@ -491,14 +533,14 @@ class Neutrals:
                 canvas.show()
 
             if pt == 'YZ':
-                if self.use_uvw.get():
-                    x = self.v_grid[0, :, :]
-                    y = self.w_grid[0, :, :]
+                if self.use_mach_coords.get():
+                    x = self.y_grid[0, :, :]
+                    y = self.z_grid[0, :, :]
                     ax.set_xlabel('Y [cm]')
                     ax.set_ylabel('Z [cm]')
                 else:
-                    x = self.y_grid[0, :, :]
-                    y = self.z_grid[0, :, :]
+                    x = self.y_grid_beam[0, :, :]
+                    y = self.z_grid_beam[0, :, :]
                     ax.set_xlabel('$Y_{beam}$ [cm]')
                     ax.set_ylabel('$Z_{beam}$ [cm]')
 
@@ -585,7 +627,7 @@ class Viewer:
         ttk.Radiobutton(self.neutrals_frame,text = 'Contour YZ',variable = self.neut.plot_type,value = 'YZ').pack()
 
 
-        ttk.Checkbutton(self.neutrals_frame,text = 'Use Machine Coordinates', variable = self.neut.use_uvw,\
+        ttk.Checkbutton(self.neutrals_frame,text = 'Use Machine Coordinates', variable = self.neut.use_mach_coords,\
             onvalue = True,offvalue = False).pack()
         ttk.Checkbutton(self.neutrals_frame,text = 'Hide Full', variable = self.neut.full_on,\
             onvalue = False,offvalue = True).pack()
