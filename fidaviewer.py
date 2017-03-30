@@ -18,6 +18,7 @@ import collections
 """
 Todo
 ----
+* can cache pickle files to make much faster
 * add validation of wavelength min and max to not be beyond data
 * take units from files, don't hardcode
 * in taking mean of beam densities, should it only be for non-zero elements?
@@ -45,6 +46,7 @@ Todo
 
 """
 
+
 def load_dict_from_hdf5(h5_filepath):
     """
     Load h5 file as a dict
@@ -65,11 +67,57 @@ def load_dict_from_hdf5(h5_filepath):
         return recursively_load_dict_contents_from_group(h5_obj, '/')
 
 
+def find_lenses(nchan, lens_loc):
+    """Find locations for unique lenses in fidasim run
+
+    Parameters
+    ----------
+    nchan : int
+        Number of spectral channels (lines of sight)
+
+    lens_loc : 2D array
+        Cartesian coords of lenses in machine coords, (nchan, 3)
+
+    Returns
+    -------
+    uniq_lens_indeces : list
+        Indeces to locate spectra for each unique lens location
+
+    nlenses : int
+        Number of unique len locations
+
+    Todo
+    ----
+    * Can't seem to do w/ np.isclose. Make this work
+    """
+    uniq_lens_indeces = list()
+    master_ind = np.arange(nchan)
+    nlos = 0
+    ic = 0
+    iter_count = -1
+    while True:
+        iter_count += 1
+        this_lens_loc = lens_loc[ic, :]
+        w = (lens_loc[:, 0] == this_lens_loc[0]) & (lens_loc[:, 1] == this_lens_loc[1]) & (lens_loc[:, 2] == this_lens_loc[2])
+        uniq_lens_indeces.append(master_ind[w])
+        nlos += uniq_lens_indeces[-1].size
+        if (nlos >= nchan) or (iter_count >= nchan):
+            break
+        else:
+            # next index not in w that hasn't been covered yet (ie, still need to examine)
+            ic = np.min(np.setdiff1d(master_ind, np.array(uniq_lens_indeces).flatten()))
+    nlenses = len(uniq_lens_indeces)
+
+    return uniq_lens_indeces, nlenses
+
+
 class Spectra:
     """ Spectra object that contains plot methods and parameters"""
     def __init__(self, dir, nml):
         spec_files = glob.glob(dir + '*_spectra.h5')
+        geo_files = glob.glob(dir + '*_geometry.h5')
         self._has_spectra = (len(spec_files) > 0)
+        self._has_geo = (len(geo_files) > 0)
 
         if self._has_spectra:
             print('Loading spectra')
@@ -87,17 +135,31 @@ class Spectra:
             self.wl_min = tk.StringVar(value = str(np.min(self.lam)))
             self.wl_max = tk.StringVar(value = str(np.max(self.lam)))
             self.dlam = np.abs(self.lam[1] - self.lam[0])
+
+            # Spectra frame checkbox variables
             self.chan = tk.StringVar(value = 'Channel 1')
             self.nbi_on = tk.BooleanVar(value = nml['calc_bes'] > 0)
             self.fida_on = tk.BooleanVar(value = nml['calc_fida'] > 0)
             self.brems_on = tk.BooleanVar(value = nml['calc_brems'] > 0)
             self.legend_on = tk.BooleanVar(value = True)
+
+            ## Imaging frame checkbox variables
+            self.full_on = tk.BooleanVar(value = nml['calc_bes'] > 0)
+            self.half_on = tk.BooleanVar(value = nml['calc_bes'] > 0)
+            self.third_on = tk.BooleanVar(value = nml['calc_bes'] > 0)
+            self.halo_on = tk.BooleanVar(value = nml['calc_bes'] > 0)
+            self.fida_on_imaging = tk.BooleanVar(value = nml['calc_fida'] > 0)
+
             if self.brems_on.get():
                 self.brems = spec['brems']
             else:
                 self.brems = None
+
             if self.fida_on.get():
                 self.fida = spec['fida']
+            else:
+                self.fida = None
+
             if self.nbi_on.get():
                 self.full = spec['full']
                 self.half = spec['half']
@@ -105,6 +167,31 @@ class Spectra:
                 self.halo = spec['halo']
             else:
                 self.full = None
+
+            if self._has_geo:
+                print('Loading geometry')
+
+                if len(geo_files) > 1:
+                    raise NotImplementedError('Multiple geometry files found')
+                else:
+                    geo = load_dict_from_hdf5(geo_files[0])
+
+                self.lens_loc = geo['spec']['lens']   # (nchan, 3)
+
+                self.uniq_lens_indeces, nlenses = find_lenses(self.nchan, self.lens_loc)
+
+                self.lenses = collections.OrderedDict(('Lens ' + str(i + 1), i) for i in range(nlenses))
+                self.lens = tk.StringVar(value = 'Lens 1')
+
+#                # Find unique lens locations
+#                self.lens = list()
+#                for i in range(self.nchan):
+#                    this_lens_loc = self.lens_loc[i, :]
+#                    w = (self.lens_loc[:, 0] == this_lens_loc[0]) & (self.lens_loc[:, 1] == this_lens_loc[1]) & (self.lens_loc[:, 2] == this_lens_loc[2])
+#                    print(self.lens_loc[w, 0].size)
+##                    sys.exit()
+            else:
+                print('No geometry file found')
         else:
             print('No spectra found')
 
@@ -118,14 +205,14 @@ class Spectra:
 
             if self.brems_on.get():
                 if self.brems is None:
-                    print('No brems spectral data found')
+                    print('No brems spectra found')
                 else:
                     brems = self.brems[ch, :]
                     ax.plot(lam, brems, label = 'Brems')
 
             if self.nbi_on.get():
                 if self.full is None:
-                    print('No beam spectral data found')
+                    print('No beam spectra found')
                 else:
                     full = self.full[ch, :]
                     half = self.half[ch, :]
@@ -138,8 +225,11 @@ class Spectra:
                     ax.plot(lam, halo, label = 'Halo')
 
             if self.fida_on.get():
-                fida = self.fida[ch, :]
-                ax.plot(lam, fida, label = 'Fida')
+                if self.full is None:
+                    print('No FIDA spectra found')
+                else:
+                    fida = self.fida[ch, :]
+                    ax.plot(lam, fida, label = 'Fida')
 
             if self.brems_on.get() or self.fida_on.get() or self.nbi_on.get():
                 if self.legend_on.get(): ax.legend()
@@ -172,6 +262,59 @@ class Spectra:
             ax.set_yscale('log')
             canvas.show()
         else: print('SPECTRA: No file')
+
+    def plot_spec_image(self, fig, canvas):
+        """Plot 2D contour of line-integrated spectra
+        """
+        lens = self.lenses[self.lens.get()]
+#        print(lens)
+        ch = self.uniq_lens_indeces[lens]
+#        print(ch)
+
+        fig.clf()
+        ax = fig.add_subplot(111)
+
+        if self.nbi_on.get():
+            if self.full is None:
+                print('No beam spectra found')
+            else:
+                full = self.full[ch, :]
+                half = self.half[ch, :]
+                third = self.third[ch, :]
+                halo = self.halo[ch, :]
+
+#                ax.plot(lam, full, label = 'Full')
+#                ax.plot(lam, half, label = 'Half')
+#                ax.plot(lam, third, label = 'Third')
+#                ax.plot(lam, halo, label = 'Halo')
+
+        if self.fida_on.get():
+            if self.full is None:
+                print('No FIDA spectra found')
+            else:
+                fida = self.fida[ch, :]
+#                ax.plot(lam, fida, label = 'Fida')
+
+        if self.brems_on.get() or self.fida_on.get() or self.nbi_on.get():
+            spec = fdens * torf(full_on) + hdens * torf(half_on) + tdens * torf(third_on) + halodens * torf(halo_on)
+
+            if self.legend_on.get(): ax.legend()
+            ax.set_yscale('log')
+            ax.set_xlabel('Wavelength [nm]')
+            ax.set_ylabel('$Ph\ /\ (s\ nm\ sr\ m^2)$')
+            ax.set_title(self.chan.get())
+            ax.set_xlim([float(self.wl_min.get()), float(self.wl_max.get())])
+            canvas.show()
+
+    def plot_brems_image(self, fig, canvas):
+        print('Not implemented yet')
+#        if self.brems_on.get():
+#            if self.brems is None:
+#                print('No brems spectra found')
+#            else:
+#                brems = self.brems[ch, :]
+#                ax.plot(lam, brems, label = 'Brems')
+
 
 class NPA:
     """ NPA object that contains plot methods and parameters"""
@@ -274,6 +417,7 @@ class NPA:
             canvas.show()
         else: print('NPA: No file')
 
+
 class Weights:
     """ Weights object that contains plot methods and parameters"""
     def __init__(self,dir):
@@ -347,7 +491,7 @@ class Weights:
 
 class Neutrals:
     """ Neutrals object that contains plot methods and parameters"""
-    def __init__(self ,dir):
+    def __init__(self, dir):
         neut_files = glob.glob(dir + '*_neutrals.h5')
         geo_files = glob.glob(dir + '*_geometry.h5')
 
@@ -363,6 +507,8 @@ class Neutrals:
                 geo = load_dict_from_hdf5(geo_files[0])
 
             self.beam_name = geo['nbi']['name'].decode('UTF-8')
+        else:
+            print('No geometry file found')
 
         if self._has_neut:
             print('Loading neutrals')
@@ -392,10 +538,10 @@ class Neutrals:
         else:
             print('No neutrals found')
 
-        ##Radio Buttons Variable
+        ## Radio Buttons Variable
         self.plot_type = tk.StringVar(value = 'XY')
 
-        ##Checkbox Variables
+        ## Checkbox Variables
         self.use_mach_coords = tk.BooleanVar(value = False)
         self.full_on = tk.BooleanVar(value = True)
         self.half_on = tk.BooleanVar(value = True)
@@ -755,12 +901,12 @@ class Viewer:
         self.npa_frame = ttk.Frame(self.nb)
         self.neutrals_frame = ttk.Frame(self.nb)
         self.weights_frame = ttk.Frame(self.nb)
-#        self.imaging_frame = ttk.Frame(self.nb)
+        self.imaging_frame = ttk.Frame(self.nb)
         self.nb.add(self.spectra_frame, text = 'Spectra')
         self.nb.add(self.npa_frame ,text = 'NPA')
         self.nb.add(self.neutrals_frame, text = 'Neutrals')
         self.nb.add(self.weights_frame, text = 'Weights')
-#        self.nb.add(self.imaging_frame, text = 'Imaging')
+        self.nb.add(self.imaging_frame, text = 'Imaging')
         self.nb.pack(side = tk.LEFT , expand = tk.Y, fill = tk.BOTH)
         self.fig = plt.Figure(figsize = (6, 5), dpi = 100)
         self.ax = self.fig.add_subplot(111)
@@ -857,6 +1003,47 @@ class Viewer:
                        command = (lambda: self.wght.plot_npa_weights(self.fig,self.canvas))).pack(side = tk.TOP,expand = tk.Y,fill = tk.BOTH)
         else:
             ttk.Label(self.weights_frame, text = '\n\nNo NPA weight data found').pack()
+
+        # Imaging frame
+        if self.spec._has_spectra and self.spec._has_geo:
+            ttk.Combobox(self.imaging_frame, textvariable = self.spec.lens,
+                         values = list(self.spec.lenses.keys())).pack()
+
+#            ttk.Checkbutton(self.imaging_frame, text = 'Exclude NBI', variable = self.spec.nbi_on,
+#                            onvalue = False, offvalue = True).pack()
+#
+#            ttk.Checkbutton(self.imaging_frame,text = 'Exclude FIDA', variable = self.spec.fida_on,
+#                            onvalue = False, offvalue = True).pack()
+#
+#            ttk.Checkbutton(self.imaging_frame,text = 'Exclude Bremsstrahlung', variable = self.spec.brems_on,\
+#            	             onvalue = False, offvalue = True).pack()
+
+            ttk.Checkbutton(self.imaging_frame,text = 'Hide Full', variable = self.spec.full_on,\
+                            onvalue = False,offvalue = True).pack()
+
+            ttk.Checkbutton(self.imaging_frame,text = 'Hide Half', variable = self.spec.half_on,\
+                            onvalue = False,offvalue = True).pack()
+
+            ttk.Checkbutton(self.imaging_frame,text = 'Hide Third', variable = self.spec.third_on,\
+                            onvalue = False,offvalue = True).pack()
+
+            ttk.Checkbutton(self.imaging_frame,text = 'Hide Halo', variable = self.spec.halo_on,\
+                            onvalue = False,offvalue = True).pack()
+
+            ttk.Label(self.imaging_frame, text = 'Wavelength Min.').pack()
+            ttk.Entry(self.imaging_frame, textvariable = self.spec.wl_min, state = tk.NORMAL, width = 10).pack()
+
+            ttk.Label(self.imaging_frame, text = 'Wavelength Max.').pack()
+            ttk.Entry(self.imaging_frame, textvariable = self.spec.wl_max, state = tk.NORMAL, width = 10).pack()
+
+            ttk.Button(self.imaging_frame, text = 'Plot Image',\
+            	        command = (lambda: self.spec.plot_spec_image(self.fig, self.canvas))).pack(side = tk.TOP, expand = tk.Y, fill = tk.BOTH)
+
+            ttk.Button(self.imaging_frame, text = 'Plot Brems',\
+            	        command = (lambda: self.spec.plot_brems_image(self.fig, self.canvas))).pack(side = tk.TOP, expand = tk.Y, fill = tk.BOTH)
+
+        else:
+            ttk.Label(self.imaging_frame, text = '\n\nNo imaging data found').pack()
 
     def load_nml(self, dir):
         nml = f90nml.read(glob.glob(dir + '*_inputs.dat')[0])['fidasim_inputs']
