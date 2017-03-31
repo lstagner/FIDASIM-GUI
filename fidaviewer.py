@@ -15,6 +15,7 @@ import f90nml
 import collections
 #from scipy.integrate import simps
 import scipy.integrate as integrate
+import fidasim as fs
 
 
 """
@@ -30,7 +31,7 @@ Todo
 * find out if histogram2d give left edges or right
 * rerun sample file sim setting all bools to true
 * implement multiple matching filenames
-* Make Spectra wl_min and wl_max changeable from gui
+* DONE - Make Spectra wl_min and wl_max changeable from gui
 * get more intellegent h5 reader to just grab what's needed
 * NPA needs work. I haven't used NPA data before - NGB
 * currently seems to load neutrals (more?) twice. check this and fix
@@ -540,18 +541,34 @@ class Spectra:
 
 
             # Now need to make uniform grid in plane and triangulate spec onto that grid
-            rot_mat = vec2vec_rotate([1., 0., 0.], lens_axis_avg)
+#            rot_mat = vec2vec_rotate([1., 0., 0.], lens_axis_avg)
 
-            target_rotated = np.copy(target)
+            # Alternative rot matrix
+            dis = np.sqrt(np.sum((lens_loc - plane_pt1) ** 2.0))
+            beta = np.arcsin((lens_loc[2] - plane_pt1[2]) / dis)
+            alpha = np.arctan2((plane_pt1[1] - lens_loc[1]), (plane_pt1[0] - lens_loc[0]))
+            gamma = 0.
+            rot_mat = fs.preprocessing.tb_zyx(alpha, beta, gamma)
+
+#            print(rot_mat)
+#            print(rot_mat2)
+
+            target_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, target.T, origin=plane_pt1).T
+
+            print(target_rotated)
+
+            print(np.all(np.isclose(np.dot(rot_mat, target_rotated.T).T + plane_pt1, target)))
+
+#            target_rotated = np.copy(target)
 
             # Shift origin
 #            target_rotated = target_rotated + np.tile(plane_pt1, (nvalid, 1))
 
             # Apply rotation matrix
-            target_rotated = np.dot(rot_mat, target_rotated.T).T
+#            target_rotated = np.dot(rot_mat, target_rotated.T).T
 
             # Shift origin
-            target_rotated = target_rotated + np.tile(plane_pt1, (nvalid, 1))
+#            target_rotated = target_rotated + np.tile(plane_pt1, (nvalid, 1))
 
 #            print(target_rotated)
 #
