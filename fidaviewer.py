@@ -351,6 +351,9 @@ class Spectra:
                 self.halo = spec['halo']
             else:
                 self.full = None
+                self.half = None
+                self.third = None
+                self.halo = None
 
             if self._has_geo:
                 print('Loading geometry')
@@ -533,11 +536,12 @@ class Spectra:
         ax.axis('equal')
 
         if (self.brems is None):
-            if self.brems_on_imaging.get():
-                print('No brems spectra found')
-            c = ax.contourf([[0,0],[0,0]])
-            cb = fig.colorbar(c)
-            ax.set_title('No data to plot')
+#            if self.brems_on_imaging.get():
+            print('No brems spectra found')
+            # How to clear plot here?
+#            c = ax.contourf([[0,0],[0,0]])
+#            cb = fig.colorbar(c)
+#            ax.set_title('No data to plot')
         else:
             brems = self.brems[ch, :]
 
