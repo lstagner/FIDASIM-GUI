@@ -39,7 +39,7 @@ Todo
 * get more intellegent h5 reader to just grab what's needed
 * NPA needs work. I haven't used NPA data before - NGB
 * currently seems to load neutrals (more?) twice. check this and fix
-* add another tab to gui "Imaging" w/ "Lens" drop down. Choose spectra and wavelength range to integrate and make contour
+* DONE - add another tab to gui "Imaging" w/ "Lens" drop down. Choose spectra and wavelength range to integrate and make contour
 * DONE - display msg like "No NPA file found" under each tab for clarity
 * DONE - use f90nml python package to parse the fortran namelist file and find what was and wasn't calculated
 * DONE - check for multiple matching filenames
@@ -429,7 +429,7 @@ class Spectra:
             self.brems_on = tk.BooleanVar(value = nml['calc_brems'] > 0)
             self.legend_on = tk.BooleanVar(value = True)
 
-            # Imaging frame checkbox variables
+            # Imaging frame variables
             self.wl_min_imaging = tk.StringVar(value = str(np.min(self.lam)))
             self.wl_max_imaging = tk.StringVar(value = str(np.max(self.lam)))
             self.full_on_imaging = tk.BooleanVar(value = nml['calc_bes'] > 0)
@@ -438,6 +438,7 @@ class Spectra:
             self.halo_on_imaging = tk.BooleanVar(value = nml['calc_bes'] > 0)
             self.fida_on_imaging = tk.BooleanVar(value = nml['calc_fida'] > 0)
             self.brems_on_imaging = tk.BooleanVar(value = nml['calc_brems'] > 0)
+            self.projection_dist = tk.StringVar(value = 100.)
 
             if self.brems_on.get():
                 self.brems = spec['brems']
@@ -550,7 +551,6 @@ class Spectra:
 
         lens = self.lenses[self.lens.get()]     # this lens index (0 to nlenses-1)
         ch = self.uniq_lens_indeces[lens]       # (this_nchan), indeces for this lens
-#        this_nchan = ch.size                    # number of channels for this lens
 
         full_on = self.full_on_imaging.get()
         half_on = self.half_on_imaging.get()
@@ -606,82 +606,27 @@ class Spectra:
             w = (self.lam >= float(self.wl_min_imaging.get())) & (self.lam <= float(self.wl_max_imaging.get()))
             spec = integrate.simps(spec[:, w], x = self.lam[w], axis = 1)  # (this_nchan)
 
-            projection_dist = 100.                      # arbitary for now, make tk variable
-            lens_axis = self.lens_axis[ch, :]           # (this_nchan, 3), all LOS axes for this lens
-#            lens_axis_avg = lens_axis.mean(0)           # (3)
-            lens_loc = self.lens_loc[ch[0], :]          # (3), same for all in ch (for TAE data)
-
-            yp_grid, zp_grid, grid_spec, valid_ic = project_image(projection_dist, lens_axis, lens_loc, spec)
-
-#            # General method: Project views onto plane projection_dist away from lens along avg lens axis
 #            projection_dist = 100.                      # arbitary for now, make tk variable
-#            lens_axis = self.lens_axis[ch, :]           # (this_nchan, 3)
-#            lens_axis_avg = lens_axis.mean(0)           # (3)
-#            lens_loc = self.lens_loc[ch[0], :]          # (3), same for all in ch
-#
-#            # Find point projection_dist along lens axis (ie point on plane pierced by lens axis line)
-#            t = np.sqrt(projection_dist ** 2 / np.sum(lens_axis_avg ** 2))
-#            plane_pt1 = lens_loc + lens_axis_avg * t
-#
-#            # Find any vector perp to lens_axis_avg (by crossing w/ any non-colinear vector) to define the plane
-#            any_vec = np.array([lens_axis_avg[0] + 5., lens_axis_avg[1], lens_axis_avg[2]])   # 5. is arbitrary
-#            plane_vec1 = np.cross(lens_axis_avg, any_vec)
-#
-#            # Find second plane vector
-#            plane_vec2 = np.cross(lens_axis_avg, plane_vec1)
-#
-#            # Find two more points to define plane
-#            plane_pt2 = plane_pt1 + plane_vec1 * 5.         # 5. is arbitrary
-#            plane_pt3 = plane_pt1 + plane_vec2 * 5.         # 5. is arbitrary
-#
-#            # Step thru each channel for this lens and find intersection with plane (call 'target' points)
-#            target = list()
-#            valid_ic = list()
-#            for ic in range(this_nchan):
-#                res = intersect_line_plane(plane_pt1, plane_pt2, plane_pt3, lens_loc, lens_axis[ic, :])
-#
-#                if res is None:
-#                    msg = 'Warning: {}, channel {}, overall channel {}, does not intersect projection plane. Ignoring.'
-#                    print(msg.format(self.lens.get(), ic, ch[ic] + 1))
-#                elif len(res) == 2:
-#                    msg = 'Warning: {}, channel {}, overall channel {}, lies in projection plane. Ignoring.'
-#                    print(msg.format(self.lens.get(), ic, ch[ic] + 1))
-#                elif len(res) == 3:
-#                    # Intersection is a point
-#                    target.append(res)
-#                    valid_ic.append(ic)
-#
-##            nvalid = len(valid_ic)
-#            target = np.array(target)       # (nvalid, 3), all on plane perp to lens_axis_avg
-#
-#            # Remove channels that wont be imaged
-#            spec = spec[valid_ic]   # (nvalid)
-#            ch = ch[valid_ic]
-#
-#            # Alternative rot matrix
-#            dis = np.sqrt(np.sum((lens_loc - plane_pt1) ** 2.0))
-#            beta = np.arcsin((lens_loc[2] - plane_pt1[2]) / dis)
-#            alpha = np.arctan2((plane_pt1[1] - lens_loc[1]), (plane_pt1[0] - lens_loc[0]))
-#            gamma = 0.
-#
-#            target_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, target.T, origin=plane_pt1).T  # (nvalid, 3)
-#
-#            n1d = 100    # no. of grid points in each direction
-#            yp = np.linspace(target_rotated[:, 1].min(), target_rotated[:, 1].max(), num = n1d)
-#            zp = np.linspace(target_rotated[:, 2].min(), target_rotated[:, 2].max(), num = n1d + 1)
-#            yp_grid, zp_grid = np.meshgrid(yp, zp, indexing='ij')
-#            grid_spec = interpolate.griddata(target_rotated[:, 1:3], spec, (yp_grid, zp_grid), fill_value = 0.)
+            lens_axis = self.lens_axis[ch, :]           # (this_nchan, 3), all LOS axes for this lens
+            lens_loc = self.lens_loc[ch[0], :]          # (3), same for all in ch
+
+            yp_grid, zp_grid, grid_spec, valid_ic = project_image(float(self.projection_dist.get()), lens_axis, lens_loc, spec)
 
             # Plot contour
             c = ax.contourf(yp_grid, zp_grid, grid_spec, 50)
             cb = fig.colorbar(c)
             cb.ax.set_ylabel('[$Ph\ /\ (s\ sr\ m^2)$]')
-            ax.set_title('Intensity')
+            ax.set_title('Intensity\nLens at [{:4.0f},{:4.0f},{:4.0f}]'.format(lens_loc[0], lens_loc[1], lens_loc[2]))
+            ax.set_xlabel('X1 [cm]')
+            ax.set_ylabel('X2 [cm]')
             canvas.show()
         else:
-            c = ax.contourf([[0,0],[0,0]])
-            cb = fig.colorbar(c)
-            ax.set_title('No data selected')
+#            c = ax.contourf([[0,0],[0,0]])
+#            cb = fig.colorbar(c)
+#            ax.set_title('No data selected')
+#            canvas.delete("all")
+            pass
+            # How to clear plot here?
 
     def plot_brems_image(self, fig, canvas):
         """Plot 2D contour of line-integrated brems
@@ -706,17 +651,19 @@ class Spectra:
             w = (self.lam >= float(self.wl_min_imaging.get())) & (self.lam <= float(self.wl_max_imaging.get()))
             spec = integrate.simps(brems[:, w], x = self.lam[w], axis = 1)  # (this_nchan)
 
-            projection_dist = 100.                      # arbitary for now, make tk variable
+#            projection_dist = 100.                      # arbitary for now, make tk variable
             lens_axis = self.lens_axis[ch, :]           # (this_nchan, 3), all LOS axes for this lens
             lens_loc = self.lens_loc[ch[0], :]          # (3), same for all in ch (for TAE data)
 
-            yp_grid, zp_grid, grid_spec, valid_ic = project_image(projection_dist, lens_axis, lens_loc, spec)
+            yp_grid, zp_grid, grid_spec, valid_ic = project_image(float(self.projection_dist.get()), lens_axis, lens_loc, spec)
 
              # Plot contour
             c = ax.contourf(yp_grid, zp_grid, grid_spec, 50)
             cb = fig.colorbar(c)
             cb.ax.set_ylabel('[$Ph\ /\ (s\ sr\ m^2)$]')
-            ax.set_title('Intensity')
+            ax.set_title('Intensity\nLens at [{:4.0f},{:4.0f},{:4.0f}]'.format(lens_loc[0], lens_loc[1], lens_loc[2]))
+            ax.set_xlabel('X1 [cm]')
+            ax.set_ylabel('X2 [cm]')
             canvas.show()
 
 
@@ -1339,10 +1286,10 @@ class Viewer:
             ttk.Checkbutton(self.spectra_frame, text = 'Hide Legend', variable = self.spec.legend_on,\
             	             onvalue = False, offvalue = True).pack()
 
-            ttk.Label(self.spectra_frame, text = 'Wavelength Min.').pack()
+            ttk.Label(self.spectra_frame, text = 'Wavelength Min (nm)').pack()
             ttk.Entry(self.spectra_frame, textvariable = self.spec.wl_min, state = tk.NORMAL, width = 10).pack()
 
-            ttk.Label(self.spectra_frame, text = 'Wavelength Max.').pack()
+            ttk.Label(self.spectra_frame, text = 'Wavelength Max (nm)').pack()
             ttk.Entry(self.spectra_frame, textvariable = self.spec.wl_max, state = tk.NORMAL, width = 10).pack()
 
             ttk.Button(self.spectra_frame, text = 'Plot Spectra',\
@@ -1430,10 +1377,10 @@ class Viewer:
             ttk.Checkbutton(self.imaging_frame,text = 'Exclude Halo', variable = self.spec.halo_on_imaging,
                             onvalue = False, offvalue = True).pack()
 
-            ttk.Label(self.imaging_frame, text = 'Wavelength Min.').pack()
+            ttk.Label(self.imaging_frame, text = 'Wavelength Min (nm)').pack()
             ttk.Entry(self.imaging_frame, textvariable = self.spec.wl_min_imaging, state = tk.NORMAL, width = 10).pack()
 
-            ttk.Label(self.imaging_frame, text = 'Wavelength Max.').pack()
+            ttk.Label(self.imaging_frame, text = 'Wavelength Max (nm)').pack()
             ttk.Entry(self.imaging_frame, textvariable = self.spec.wl_max_imaging, state = tk.NORMAL, width = 10).pack()
 
             ttk.Button(self.imaging_frame, text = 'Plot Image',\
@@ -1442,6 +1389,8 @@ class Viewer:
             ttk.Button(self.imaging_frame, text = 'Plot Brems',\
             	        command = (lambda: self.spec.plot_brems_image(self.fig, self.canvas))).pack(side = tk.TOP, expand = tk.Y, fill = tk.BOTH)
 
+            ttk.Label(self.imaging_frame, text = 'Projection Distance (cm)').pack()
+            ttk.Entry(self.imaging_frame, textvariable = self.spec.projection_dist, state = tk.NORMAL, width = 10).pack()
         else:
             ttk.Label(self.imaging_frame, text = '\n\nNo imaging data found').pack()
 
