@@ -16,6 +16,7 @@ import collections
 #from scipy.integrate import simps
 import scipy.integrate as integrate
 import fidasim as fs
+import scipy.interpolate as interpolate
 
 
 """
@@ -553,11 +554,17 @@ class Spectra:
 #            print(rot_mat)
 #            print(rot_mat2)
 
-            target_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, target.T, origin=plane_pt1).T
+            target_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, target.T, origin=plane_pt1).T  # (nvalid, 3)
 
-            print(target_rotated)
+            n1d = 100    # no. of grid points in each direction
+            yp = np.linspace(target_rotated[:, 1].min(), target_rotated[:, 1].max(), num = n1d)
+            zp = np.linspace(target_rotated[:, 2].min(), target_rotated[:, 2].max(), num = n1d)
+            yp_grid, zp_grid = np.meshgrid(yp, zp, indexing='ij')
+            grid_spec = interpolate.griddata(target_rotated[:, 1:3], spec, (yp_grid, zp_grid), fill_value = 0.)
 
-            print(np.all(np.isclose(np.dot(rot_mat, target_rotated.T).T + plane_pt1, target)))
+            print(grid_spec.shape)
+
+            # return to orgin system using: print(np.all(np.isclose(np.dot(rot_mat, target_rotated.T).T + plane_pt1, target)))
 
 #            target_rotated = np.copy(target)
 
