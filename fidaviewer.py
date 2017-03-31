@@ -13,24 +13,33 @@ from tkinter import ttk
 import h5py
 import f90nml
 import collections
+#from scipy.integrate import simps
+import scipy.integrate as integrate
+import fidasim as fs
+import scipy.interpolate as interpolate
 
 
 """
 Todo
 ----
+* separate concept of nbi_on and full_on from has_nb_spec and has_full_spec to separate spectra from imaging frames
+* make 'reset wavelength range' button for spectra and imaging frames
+* clean plots when all data turned off
+* with smart h5 reader, could load only info needed to make gui first, then only get data when called, and then save for later use
+* can cache pickle files to make much faster
 * add validation of wavelength min and max to not be beyond data
-* take units from files, don't hardcode
-* in taking mean of beam densities, should it only be for non-zero elements?
+* take units from files, don't hardcode. Low priority future-proofing
+* in taking mean of beam densities, should it only be for non-zero elements? As grid vol --> inf, density --> 0 otherwise
 * optimize: can more stuff be loaded only when used? can more stuff be saved and not recalculated (ie set/get)?
 * option to change volume element in neutral plotting for better fidelity in going from beam to mach coords
 * find out if histogram2d give left edges or right
 * rerun sample file sim setting all bools to true
 * implement multiple matching filenames
-* Make Spectra wl_min and wl_max changeable from gui
+* DONE - Make Spectra wl_min and wl_max changeable from gui
 * get more intellegent h5 reader to just grab what's needed
 * NPA needs work. I haven't used NPA data before - NGB
 * currently seems to load neutrals (more?) twice. check this and fix
-* add another tab to gui "Imaging" w/ "Lens" drop down. Choose spectra and wavelength range to integrate and make contour
+* DONE - add another tab to gui "Imaging" w/ "Lens" drop down. Choose spectra and wavelength range to integrate and make contour
 * DONE - display msg like "No NPA file found" under each tab for clarity
 * DONE - use f90nml python package to parse the fortran namelist file and find what was and wasn't calculated
 * DONE - check for multiple matching filenames
@@ -44,6 +53,286 @@ Todo
 * DONE - put NB name on plot (in geo file)
 
 """
+
+def project_image(projection_dist, axes, aperture, data):
+    """Given several lines of sight and an intensity per LOS, project an image on a plane perpendicular
+    to the average LOS axis.
+
+    Parameters
+    ----------
+    projection_dist : float
+        Distance along average LOS axis for projection plane
+
+    axes : array (nchan, 3)
+        Normalized axes vectors defining LOS
+
+    aperture : array (3)
+        Common location for all LOS (aperature or lens)
+
+    data : array (nchan)
+        Data to be projected
+
+    Returns
+    -------
+    x1_grid : float array (100, 101)
+        Relative coordinates for grid_data (perpendicular to average LOS axis)
+
+    x2_grid : float array (100, 101)
+        Second set of relative coordinates for grid_data (perpendicular to average LOS axis)
+
+    grid_data : float array (100, 101)
+        data interpolated onto a uniform grid on a plane perpendicular to the average LOS axis and
+        projection_dist from the aperature
+
+    valid_ic : int array (<=nchan)
+        Indeces (relative to an (nchan) array) indicating which LOS made a valid projection
+
+    Todo
+    ----
+    * Generalize with points (nchan, 3) distinct for each LOS
+    """
+    avg_los_axis = axes.mean(0)           # (3)
+    nchan = axes.shape[0]
+
+    # Find point projection_dist along lens axis (ie point on plane pierced by lens axis line)
+    t = np.sqrt(projection_dist ** 2 / np.sum(avg_los_axis ** 2))
+    plane_pt1 = aperture + avg_los_axis * t
+
+    # Find any vector perp to avg_los_axis (by crossing w/ any non-colinear vector) to define the plane
+    any_vec = np.array([avg_los_axis[0] + 5., avg_los_axis[1], avg_los_axis[2]])   # 5. is arbitrary
+    plane_vec1 = np.cross(avg_los_axis, any_vec)
+
+    # Find second plane vector
+    plane_vec2 = np.cross(avg_los_axis, plane_vec1)
+
+    # Find two more points to define plane
+    plane_pt2 = plane_pt1 + plane_vec1 * 5.         # 5. is arbitrary
+    plane_pt3 = plane_pt1 + plane_vec2 * 5.         # 5. is arbitrary
+
+    # Step thru each LOS and find intersection with plane (call them 'target' points)
+    target = list()         # locations where LOS hit projection plane
+    valid_ic = list()       # indeces (relative to (nchan) array) where LOS makes valid projection
+    for ic in range(nchan):
+        res = intersect_line_plane(plane_pt1, plane_pt2, plane_pt3, aperture, axes[ic, :])
+
+        if res is None:
+            print('Warning: LOS {}, does not intersect projection plane. Ignoring'.format(ic))
+        elif len(res) == 2:
+            print('Warning: LOS {} lies in projection plane. Ignoring'.format(ic))
+        elif len(res) == 3:
+            # Intersection is a point
+            target.append(res)
+            valid_ic.append(ic)
+
+    target = np.array(target)       # (nvalid, 3), all on plane perp to avg_los_axis
+
+    # Remove channels that wont be imaged
+    data = data[valid_ic]   # (nvalid)
+
+    # Rotate target locations into coord sys aligned with avg_los_axis
+    dis = np.sqrt(np.sum((aperture - plane_pt1) ** 2.0))
+    beta = np.arcsin((aperture[2] - plane_pt1[2]) / dis)
+    alpha = np.arctan2((plane_pt1[1] - aperture[1]), (plane_pt1[0] - aperture[0]))
+    gamma = 0.
+    target_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, target.T, origin=plane_pt1).T  # (nvalid, 3)
+
+    # Interpolate data onto uniform grid along target plane
+    n1d = 100    # no. of grid points in each direction
+    x1 = np.linspace(target_rotated[:, 1].min(), target_rotated[:, 1].max(), num = n1d)
+    x2 = np.linspace(target_rotated[:, 2].min(), target_rotated[:, 2].max(), num = n1d + 1)
+    x1_grid, x2_grid = np.meshgrid(x1, x2, indexing='ij')
+    grid_data = interpolate.griddata(target_rotated[:, 1:3], data, (x1_grid, x2_grid), fill_value = 0.)
+
+    return x1_grid, x2_grid, grid_data, valid_ic
+
+
+def vec2vec_rotate(vec1, vec2):
+    """Returns the rotation matrix to rotate from vec1 to parallel to vec2.
+
+    From the cited paper:
+    "We have a unit vector, f, that we wish to rotate to another
+    unit vector, t, by rotation in a plane containing both; in other words, we
+    seek a rotation matrix R(f,t) such that R(f, t)f = t."
+
+    Notes
+    -----
+    See paper: "Efficiently Building a Matrix to Rotate One Vector to Another"
+    http://www.cs.brown.edu/~jfh/papers/Moller-EBA-1999/main.htm
+
+    Error arises when vec1 has two equal length components (cannot define p) (exception created for vec1 on an axis)
+    Error arises when vec2 is on an axis and p is the same axis (divide by zero)
+
+    Parameters
+    ----------
+    vec1 : float array (3)
+        Original vector
+
+    vec2 : float array (3)
+        Vector to rotate vec1 to
+
+    History
+    -------
+    2013-11-03 Nathan Bolte copied from Mike Van Zeeland's get_beam_rays.pro
+    2013-12-01 NGB changed name from vec2vec_rotation to vec2vec_rotate to avoid letting IDL use copy from
+               get_beam_rays.pro, which it was doing.
+    2014-01-27 NGB added reform of inputs. Changed from () to [] for arrays.
+    2015-01-20 NGB added error output
+    2016-12-21 NGB converted to python. Changed variable names to those in paper.
+
+    To Do
+    -----
+    * Generalize so that either vec in can be any axis
+    * DONE - Are the if statements mutally exclusive? If so, make them if, elif, else
+    """
+    # Make np arrays
+    f = np.array(vec1, dtype=float, ndmin=1)
+    t = np.array(vec2, dtype=float, ndmin=1)
+
+    # Make sure inputs are only 3 long
+    if (f.ndim != t.ndim != 1) or (f.size != t.size != 3):
+        raise ValueError('Inputs must be 1D arrays or lists of length 3')
+
+    # Normalize input vectors
+    f = f / np.sqrt(np.sum(f ** 2))
+    t = t / np.sqrt(np.sum(t ** 2))
+
+    f_abs = np.abs(f)
+
+    # Define p vector
+    if (f_abs[0] < f_abs[1]) and (f_abs[0] < f_abs[2]):
+        p = [1., 0., 0.]
+
+    elif (f_abs[1] < f_abs[0]) and (f_abs[1] < f_abs[2]):
+        p = [0., 1., 0.]
+
+    elif (f_abs[2] < f_abs[0]) and (f_abs[2] < f_abs[1]):
+        p = [0., 0., 1.]
+
+    # This allows vec1 to be an axis and p to still be defined
+    # will choose y axis if f=xhat
+    elif np.sum(f * [1., 0., 0.]) == 1.:
+        p = [0., 1., 0.]
+
+    # will choose x axis if f=yhat
+    elif np.sum(f * [0., 1., 0.]) == 1.:
+        p = [1., 0., 0.]
+
+    # will choose z axis if f=zhat
+    elif np.sum(f * [0., 0., 1.]) == 1.:
+        p = [0., 0., 1.]
+
+    else:
+        raise ValueError('p undefined')
+
+    u = p - f
+    v = p - t
+
+    # Dot products
+    uu  = np.sum(u * u)
+    vv  = np.sum(v * v)
+    uv  = np.sum(u * v)
+
+    if uu * vv == 0.:
+        raise ValueError('Zero in denominator')
+
+    # Rotation matrix output container
+    rot_mat = np.zeros((3,3))
+
+    # Assemble rotation matrix
+    for i in range(3):
+        for j in range(3):
+            if i == j:
+                dij = 1.
+            else:
+                dij = 0.
+
+            rot_mat[i, j] = dij - (2. / uu) * u[i] * u[j] - (2. / vv) * v[i] * v[j] + (4. * uv) / (uu * vv) * v[i] * u[j]
+
+    return rot_mat
+
+
+def intersect_line_plane(plane_pt1, plane_pt2, plane_pt3, line_pt, line_axis):
+        '''Calculate the intersection location between line and plane
+
+        Parameters
+        ----------
+        Plane object
+            Plane to find intersection with this line
+
+        Returns
+        -------
+        list or None
+            Two element list: point and axis of line itself (ie line is in plane)
+            Three element list: Coordinates of intersection point
+            None: Line does not intersect plane
+
+        Notes
+        -----
+        Not implemented for multiple lines or planes
+
+        * For testing for cases in line-plane intersection, see [1]_
+        * For the cases where the line-plane intersection is a point, see [2]_
+
+        References
+        ----------
+        .. [1] https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection#Algebraic_form
+        .. [2] http://mathworld.wolfram.com/Line-PlaneIntersection.html
+        '''
+        # other = plane, self = line
+
+        X1 = plane_pt1
+        X2 = plane_pt2
+        X3 = plane_pt3
+        X4 = line_pt
+        line_axis = line_axis
+
+        # Vector normal to plane
+        plane_norm_vec = np.cross(X1 - X2, X3 - X2)
+        plane_norm_vec /= np.linalg.norm(plane_norm_vec)
+
+        # Avoid using same point on line and plane. Just move further along line (arbitrarily let t = 1.)
+        if np.array_equal(X1, X4):
+            X4 = X4 + line_axis * 1.
+
+        # Test for different cases.
+        # Since vec1, plane_norm_vec, and line_axis are all normalized, the following dot products are [0, 1]. So can
+        # use a tolerance instead of comparing to zero.
+        tol = 1e-15
+        vec1 = (X4 - X1)
+        vec1 /= np.linalg.norm(vec1)
+#        print()
+        if np.abs(np.dot(line_axis, plane_norm_vec)) < tol:
+            # Line and plane are parallel
+#            print('Line and plane are parallel', np.dot(line_axis, plane_norm_vec))
+            if np.abs(np.dot(vec1, plane_norm_vec)) < tol:
+                # Line is in the plane. Intersection is the line itself
+#                print('Line is in the plane.', np.abs(np.dot(vec1, plane_norm_vec)))
+                return [X4, line_axis]
+            else:
+                # Line does not intersect plane
+#                print('Line does not intersect plane.' , np.abs(np.dot(vec1, plane_norm_vec)))
+                return None
+        else:
+            # Intersection is a point
+#            print('Intersection is a point')
+            mat1 = np.ones((4, 4), dtype=float)
+            mat1[1:4, 0] = X1
+            mat1[1:4, 1] = X2
+            mat1[1:4, 2] = X3
+            mat1[1:4, 3] = X4
+
+            mat2 = np.copy(mat1)
+            mat2[0, 3] = 0.
+            mat2[1:4, 3] = line_axis
+
+            t = -np.linalg.det(mat1) / np.linalg.det(mat2)
+
+            x = X4[0] + line_axis[0] * t
+            y = X4[1] + line_axis[1] * t
+            z = X4[2] + line_axis[2] * t
+
+            return [x, y, z]
+
 
 def load_dict_from_hdf5(h5_filepath):
     """
@@ -65,11 +354,57 @@ def load_dict_from_hdf5(h5_filepath):
         return recursively_load_dict_contents_from_group(h5_obj, '/')
 
 
+def find_lenses(nchan, lens_loc):
+    """Find locations for unique lenses in fidasim run
+
+    Parameters
+    ----------
+    nchan : int
+        Number of spectral channels (lines of sight)
+
+    lens_loc : 2D array
+        Cartesian coords of lenses in machine coords, (nchan, 3)
+
+    Returns
+    -------
+    uniq_lens_indeces : list
+        Indeces to locate spectra for each unique lens location
+
+    nlenses : int
+        Number of unique len locations
+
+    Todo
+    ----
+    * Can't seem to do w/ np.isclose. Make this work
+    """
+    uniq_lens_indeces = list()
+    master_ind = np.arange(nchan)
+    nlos = 0
+    ic = 0
+    iter_count = -1
+    while True:
+        iter_count += 1
+        this_lens_loc = lens_loc[ic, :]
+        w = (lens_loc[:, 0] == this_lens_loc[0]) & (lens_loc[:, 1] == this_lens_loc[1]) & (lens_loc[:, 2] == this_lens_loc[2])
+        uniq_lens_indeces.append(master_ind[w])
+        nlos += uniq_lens_indeces[-1].size
+        if (nlos >= nchan) or (iter_count >= nchan):
+            break
+        else:
+            # next index not in w that hasn't been covered yet (ie, still need to examine)
+            ic = np.min(np.setdiff1d(master_ind, np.array(uniq_lens_indeces).flatten()))
+    nlenses = len(uniq_lens_indeces)
+
+    return uniq_lens_indeces, nlenses
+
+
 class Spectra:
     """ Spectra object that contains plot methods and parameters"""
     def __init__(self, dir, nml):
         spec_files = glob.glob(dir + '*_spectra.h5')
+        geo_files = glob.glob(dir + '*_geometry.h5')
         self._has_spectra = (len(spec_files) > 0)
+        self._has_geo = (len(geo_files) > 0)
 
         if self._has_spectra:
             print('Loading spectra')
@@ -82,22 +417,39 @@ class Spectra:
             self.lam = spec['lambda']
             self.nchan = spec['nchan']
             self.channels = collections.OrderedDict(('Channel ' + str(i + 1), i) for i in range(self.nchan))
-#            self.wl_min = np.min(self.lam)
-#            self.wl_max = np.max(self.lam)
+
+            self.dlam = np.abs(self.lam[1] - self.lam[0])
+
+            # Spectra frame variables
             self.wl_min = tk.StringVar(value = str(np.min(self.lam)))
             self.wl_max = tk.StringVar(value = str(np.max(self.lam)))
-            self.dlam = np.abs(self.lam[1] - self.lam[0])
             self.chan = tk.StringVar(value = 'Channel 1')
             self.nbi_on = tk.BooleanVar(value = nml['calc_bes'] > 0)
             self.fida_on = tk.BooleanVar(value = nml['calc_fida'] > 0)
             self.brems_on = tk.BooleanVar(value = nml['calc_brems'] > 0)
             self.legend_on = tk.BooleanVar(value = True)
+
+            # Imaging frame variables
+            self.wl_min_imaging = tk.StringVar(value = str(np.min(self.lam)))
+            self.wl_max_imaging = tk.StringVar(value = str(np.max(self.lam)))
+            self.full_on_imaging = tk.BooleanVar(value = nml['calc_bes'] > 0)
+            self.half_on_imaging = tk.BooleanVar(value = nml['calc_bes'] > 0)
+            self.third_on_imaging = tk.BooleanVar(value = nml['calc_bes'] > 0)
+            self.halo_on_imaging = tk.BooleanVar(value = nml['calc_bes'] > 0)
+            self.fida_on_imaging = tk.BooleanVar(value = nml['calc_fida'] > 0)
+            self.brems_on_imaging = tk.BooleanVar(value = nml['calc_brems'] > 0)
+            self.projection_dist = tk.StringVar(value = 100.)
+
             if self.brems_on.get():
                 self.brems = spec['brems']
             else:
                 self.brems = None
+
             if self.fida_on.get():
                 self.fida = spec['fida']
+            else:
+                self.fida = None
+
             if self.nbi_on.get():
                 self.full = spec['full']
                 self.half = spec['half']
@@ -105,6 +457,24 @@ class Spectra:
                 self.halo = spec['halo']
             else:
                 self.full = None
+
+            if self._has_geo:
+                print('Loading geometry')
+
+                if len(geo_files) > 1:
+                    raise NotImplementedError('Multiple geometry files found')
+                else:
+                    geo = load_dict_from_hdf5(geo_files[0])
+
+                self.lens_loc = geo['spec']['lens']    # (nchan, 3)
+                self.lens_axis = geo['spec']['axis']   # (nchan, 3)
+
+                self.uniq_lens_indeces, nlenses = find_lenses(self.nchan, self.lens_loc)
+
+                self.lenses = collections.OrderedDict(('Lens ' + str(i + 1), i) for i in range(nlenses))
+                self.lens = tk.StringVar(value = 'Lens 1')
+            else:
+                print('No geometry file found')
         else:
             print('No spectra found')
 
@@ -118,14 +488,14 @@ class Spectra:
 
             if self.brems_on.get():
                 if self.brems is None:
-                    print('No brems spectral data found')
+                    print('No brems spectra found')
                 else:
                     brems = self.brems[ch, :]
                     ax.plot(lam, brems, label = 'Brems')
 
             if self.nbi_on.get():
                 if self.full is None:
-                    print('No beam spectral data found')
+                    print('No beam spectra found')
                 else:
                     full = self.full[ch, :]
                     half = self.half[ch, :]
@@ -138,8 +508,11 @@ class Spectra:
                     ax.plot(lam, halo, label = 'Halo')
 
             if self.fida_on.get():
-                fida = self.fida[ch, :]
-                ax.plot(lam, fida, label = 'Fida')
+                if self.fida is None:
+                    print('No FIDA spectra found')
+                else:
+                    fida = self.fida[ch, :]
+                    ax.plot(lam, fida, label = 'Fida')
 
             if self.brems_on.get() or self.fida_on.get() or self.nbi_on.get():
                 if self.legend_on.get(): ax.legend()
@@ -156,8 +529,6 @@ class Spectra:
 
     def plot_intensity(self, fig, canvas):
         if self._has_spectra:
-#            w1 = (self.lam >= self.wl_min)
-#            w2 = (self.lam <= self.wl_max)
             w1 = (self.lam >= float(self.wl_min.get()))
             w2 = (self.lam <= float(self.wl_max.get()))
             w = np.logical_and(w1, w2)
@@ -172,6 +543,129 @@ class Spectra:
             ax.set_yscale('log')
             canvas.show()
         else: print('SPECTRA: No file')
+
+    def plot_spec_image(self, fig, canvas):
+        """Plot 2D contour of line-integrated spectra excluding brems
+        """
+        torf = lambda T: 1. if T else 0.
+
+        lens = self.lenses[self.lens.get()]     # this lens index (0 to nlenses-1)
+        ch = self.uniq_lens_indeces[lens]       # (this_nchan), indeces for this lens
+
+        full_on = self.full_on_imaging.get()
+        half_on = self.half_on_imaging.get()
+        third_on = self.third_on_imaging.get()
+        halo_on = self.halo_on_imaging.get()
+        fida_on = self.fida_on_imaging.get()
+
+        fig.clf()
+        ax = fig.add_subplot(111)
+        ax.axis('equal')
+
+        if (self.full is not None):
+            full = self.full[ch, :]
+        else:
+            full = 0.
+            if full_on:
+                print('No full spectra found')
+
+        if (self.half is not None):
+            half = self.half[ch, :]
+        else:
+            half = 0.
+            if half_on:
+                print('No half spectra found')
+
+        if (self.third is not None):
+            third = self.third[ch, :]
+        else:
+            third = 0.
+            if third_on:
+                print('No third spectra found')
+
+        if (self.halo is not None):
+            halo = self.halo[ch, :]
+        else:
+            halo = 0.
+            if halo_on:
+                print('No halo spectra found')
+
+        if (self.fida is not None):
+            fida = self.fida[ch, :]
+        else:
+            fida = 0.
+            if fida_on:
+                print('No fida spectra found')
+
+        if (fida_on) or (full_on) or (half_on) or (third_on) or (halo_on):
+            spec = full * torf(full_on) + half * torf(half_on) + \
+                   third * torf(third_on) + halo * torf(halo_on) + \
+                   fida * torf(fida_on)
+
+            # Integrate over wavelengths
+            w = (self.lam >= float(self.wl_min_imaging.get())) & (self.lam <= float(self.wl_max_imaging.get()))
+            spec = integrate.simps(spec[:, w], x = self.lam[w], axis = 1)  # (this_nchan)
+
+#            projection_dist = 100.                      # arbitary for now, make tk variable
+            lens_axis = self.lens_axis[ch, :]           # (this_nchan, 3), all LOS axes for this lens
+            lens_loc = self.lens_loc[ch[0], :]          # (3), same for all in ch
+
+            yp_grid, zp_grid, grid_spec, valid_ic = project_image(float(self.projection_dist.get()), lens_axis, lens_loc, spec)
+
+            # Plot contour
+            c = ax.contourf(yp_grid, zp_grid, grid_spec, 50)
+            cb = fig.colorbar(c)
+            cb.ax.set_ylabel('[$Ph\ /\ (s\ sr\ m^2)$]')
+            ax.set_title('Intensity\nLens at [{:4.0f},{:4.0f},{:4.0f}]'.format(lens_loc[0], lens_loc[1], lens_loc[2]))
+            ax.set_xlabel('X1 [cm]')
+            ax.set_ylabel('X2 [cm]')
+            canvas.show()
+        else:
+#            c = ax.contourf([[0,0],[0,0]])
+#            cb = fig.colorbar(c)
+#            ax.set_title('No data selected')
+#            canvas.delete("all")
+            pass
+            # How to clear plot here?
+
+    def plot_brems_image(self, fig, canvas):
+        """Plot 2D contour of line-integrated brems
+        """
+        lens = self.lenses[self.lens.get()]     # this lens index (0 to nlenses-1)
+        ch = self.uniq_lens_indeces[lens]       # (this_nchan), indeces for this lens
+
+        fig.clf()
+        ax = fig.add_subplot(111)
+        ax.axis('equal')
+
+        if (self.brems is None):
+            if self.brems_on_imaging.get():
+                print('No brems spectra found')
+            c = ax.contourf([[0,0],[0,0]])
+            cb = fig.colorbar(c)
+            ax.set_title('No data to plot')
+        else:
+            brems = self.brems[ch, :]
+
+            # Integrate over wavelengths
+            w = (self.lam >= float(self.wl_min_imaging.get())) & (self.lam <= float(self.wl_max_imaging.get()))
+            spec = integrate.simps(brems[:, w], x = self.lam[w], axis = 1)  # (this_nchan)
+
+#            projection_dist = 100.                      # arbitary for now, make tk variable
+            lens_axis = self.lens_axis[ch, :]           # (this_nchan, 3), all LOS axes for this lens
+            lens_loc = self.lens_loc[ch[0], :]          # (3), same for all in ch (for TAE data)
+
+            yp_grid, zp_grid, grid_spec, valid_ic = project_image(float(self.projection_dist.get()), lens_axis, lens_loc, spec)
+
+             # Plot contour
+            c = ax.contourf(yp_grid, zp_grid, grid_spec, 50)
+            cb = fig.colorbar(c)
+            cb.ax.set_ylabel('[$Ph\ /\ (s\ sr\ m^2)$]')
+            ax.set_title('Intensity\nLens at [{:4.0f},{:4.0f},{:4.0f}]'.format(lens_loc[0], lens_loc[1], lens_loc[2]))
+            ax.set_xlabel('X1 [cm]')
+            ax.set_ylabel('X2 [cm]')
+            canvas.show()
+
 
 class NPA:
     """ NPA object that contains plot methods and parameters"""
@@ -274,6 +768,7 @@ class NPA:
             canvas.show()
         else: print('NPA: No file')
 
+
 class Weights:
     """ Weights object that contains plot methods and parameters"""
     def __init__(self,dir):
@@ -347,7 +842,7 @@ class Weights:
 
 class Neutrals:
     """ Neutrals object that contains plot methods and parameters"""
-    def __init__(self ,dir):
+    def __init__(self, dir):
         neut_files = glob.glob(dir + '*_neutrals.h5')
         geo_files = glob.glob(dir + '*_geometry.h5')
 
@@ -363,6 +858,8 @@ class Neutrals:
                 geo = load_dict_from_hdf5(geo_files[0])
 
             self.beam_name = geo['nbi']['name'].decode('UTF-8')
+        else:
+            print('No geometry file found')
 
         if self._has_neut:
             print('Loading neutrals')
@@ -392,10 +889,10 @@ class Neutrals:
         else:
             print('No neutrals found')
 
-        ##Radio Buttons Variable
+        ## Radio Buttons Variable
         self.plot_type = tk.StringVar(value = 'XY')
 
-        ##Checkbox Variables
+        ## Checkbox Variables
         self.use_mach_coords = tk.BooleanVar(value = False)
         self.full_on = tk.BooleanVar(value = True)
         self.half_on = tk.BooleanVar(value = True)
@@ -412,6 +909,8 @@ class Neutrals:
         if self._has_neut and (full_on or half_on or third_on or halo_on):
             fig.clf()
             ax = fig.add_subplot(111)
+            ax.axis('equal')
+
             pt = self.plot_type.get()
 
             if pt == 'X':
@@ -755,12 +1254,12 @@ class Viewer:
         self.npa_frame = ttk.Frame(self.nb)
         self.neutrals_frame = ttk.Frame(self.nb)
         self.weights_frame = ttk.Frame(self.nb)
-#        self.imaging_frame = ttk.Frame(self.nb)
+        self.imaging_frame = ttk.Frame(self.nb)
         self.nb.add(self.spectra_frame, text = 'Spectra')
         self.nb.add(self.npa_frame ,text = 'NPA')
         self.nb.add(self.neutrals_frame, text = 'Neutrals')
         self.nb.add(self.weights_frame, text = 'Weights')
-#        self.nb.add(self.imaging_frame, text = 'Imaging')
+        self.nb.add(self.imaging_frame, text = 'Imaging')
         self.nb.pack(side = tk.LEFT , expand = tk.Y, fill = tk.BOTH)
         self.fig = plt.Figure(figsize = (6, 5), dpi = 100)
         self.ax = self.fig.add_subplot(111)
@@ -787,10 +1286,10 @@ class Viewer:
             ttk.Checkbutton(self.spectra_frame, text = 'Hide Legend', variable = self.spec.legend_on,\
             	             onvalue = False, offvalue = True).pack()
 
-            ttk.Label(self.spectra_frame, text = 'Wavelength Min.').pack()
+            ttk.Label(self.spectra_frame, text = 'Wavelength Min (nm)').pack()
             ttk.Entry(self.spectra_frame, textvariable = self.spec.wl_min, state = tk.NORMAL, width = 10).pack()
 
-            ttk.Label(self.spectra_frame, text = 'Wavelength Max.').pack()
+            ttk.Label(self.spectra_frame, text = 'Wavelength Max (nm)').pack()
             ttk.Entry(self.spectra_frame, textvariable = self.spec.wl_max, state = tk.NORMAL, width = 10).pack()
 
             ttk.Button(self.spectra_frame, text = 'Plot Spectra',\
@@ -858,6 +1357,43 @@ class Viewer:
         else:
             ttk.Label(self.weights_frame, text = '\n\nNo NPA weight data found').pack()
 
+        # Imaging frame
+        if self.spec._has_spectra and self.spec._has_geo:
+            ttk.Combobox(self.imaging_frame, textvariable = self.spec.lens,
+                         values = list(self.spec.lenses.keys())).pack()
+
+            ttk.Checkbutton(self.imaging_frame,text = 'Exclude FIDA', variable = self.spec.fida_on_imaging,
+                            onvalue = False, offvalue = True).pack()
+
+            ttk.Checkbutton(self.imaging_frame,text = 'Exclude Full', variable = self.spec.full_on_imaging,
+                            onvalue = False, offvalue = True).pack()
+
+            ttk.Checkbutton(self.imaging_frame,text = 'Exclude Half', variable = self.spec.half_on_imaging,
+                            onvalue = False, offvalue = True).pack()
+
+            ttk.Checkbutton(self.imaging_frame,text = 'Exclude Third', variable = self.spec.third_on_imaging,
+                            onvalue = False, offvalue = True).pack()
+
+            ttk.Checkbutton(self.imaging_frame,text = 'Exclude Halo', variable = self.spec.halo_on_imaging,
+                            onvalue = False, offvalue = True).pack()
+
+            ttk.Label(self.imaging_frame, text = 'Wavelength Min (nm)').pack()
+            ttk.Entry(self.imaging_frame, textvariable = self.spec.wl_min_imaging, state = tk.NORMAL, width = 10).pack()
+
+            ttk.Label(self.imaging_frame, text = 'Wavelength Max (nm)').pack()
+            ttk.Entry(self.imaging_frame, textvariable = self.spec.wl_max_imaging, state = tk.NORMAL, width = 10).pack()
+
+            ttk.Button(self.imaging_frame, text = 'Plot Image',\
+            	        command = (lambda: self.spec.plot_spec_image(self.fig, self.canvas))).pack(side = tk.TOP, expand = tk.Y, fill = tk.BOTH)
+
+            ttk.Button(self.imaging_frame, text = 'Plot Brems',\
+            	        command = (lambda: self.spec.plot_brems_image(self.fig, self.canvas))).pack(side = tk.TOP, expand = tk.Y, fill = tk.BOTH)
+
+            ttk.Label(self.imaging_frame, text = 'Projection Distance (cm)').pack()
+            ttk.Entry(self.imaging_frame, textvariable = self.spec.projection_dist, state = tk.NORMAL, width = 10).pack()
+        else:
+            ttk.Label(self.imaging_frame, text = '\n\nNo imaging data found').pack()
+
     def load_nml(self, dir):
         nml = f90nml.read(glob.glob(dir + '*_inputs.dat')[0])['fidasim_inputs']
 
@@ -867,7 +1403,6 @@ class Viewer:
         self.dir = askdirectory()
         if self.dir == '': self.dir = os.getcwd()
         if self.dir[-1] != '/': self.dir += '/'
-#        if self.dir[-1] != os.path.sep: self.dir += os.path.sep
 
         self.nml = self.load_nml(self.dir)
         self.spec = Spectra(self.dir, self.nml)
