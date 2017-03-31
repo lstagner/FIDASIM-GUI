@@ -22,6 +22,9 @@ import scipy.interpolate as interpolate
 """
 Todo
 ----
+* separate concept of nbi_on and full_on from has_nb_spec and has_full_spec to separate spectra from imaging frames
+* make 'reset wavelength range' button for spectra and imaging frames
+* clean plots when all data turned off
 * with smart h5 reader, could load only info needed to make gui first, then only get data when called, and then save for later use
 * can cache pickle files to make much faster
 * add validation of wavelength min and max to not be beyond data
@@ -50,6 +53,97 @@ Todo
 * DONE - put NB name on plot (in geo file)
 
 """
+
+def project_image(projection_dist, axes, aperture, data):
+    """Given several lines of sight and an intensity per LOS, project an image on a plane perpendicular
+    to the average LOS axis.
+
+    Parameters
+    ----------
+    projection_dist : float
+        Distance along average LOS axis for projection plane
+
+    axes : array (nchan, 3)
+        Normalized axes vectors defining LOS
+
+    aperture : array (3)
+        Common location for all LOS (aperature or lens)
+
+    data : array (nchan)
+        Data to be projected
+
+    Returns
+    -------
+    x1_grid : float array (100, 101)
+        Relative coordinates for grid_data (perpendicular to average LOS axis)
+
+    x2_grid : float array (100, 101)
+        Second set of relative coordinates for grid_data (perpendicular to average LOS axis)
+
+    grid_data : float array (100, 101)
+        data interpolated onto a uniform grid on a plane perpendicular to the average LOS axis and
+        projection_dist from the aperature
+
+    valid_ic : int array (<=nchan)
+        Indeces (relative to an (nchan) array) indicating which LOS made a valid projection
+
+    Todo
+    ----
+    * Generalize with points (nchan, 3) distinct for each LOS
+    """
+    avg_los_axis = axes.mean(0)           # (3)
+    nchan = axes.shape[0]
+
+    # Find point projection_dist along lens axis (ie point on plane pierced by lens axis line)
+    t = np.sqrt(projection_dist ** 2 / np.sum(avg_los_axis ** 2))
+    plane_pt1 = aperture + avg_los_axis * t
+
+    # Find any vector perp to avg_los_axis (by crossing w/ any non-colinear vector) to define the plane
+    any_vec = np.array([avg_los_axis[0] + 5., avg_los_axis[1], avg_los_axis[2]])   # 5. is arbitrary
+    plane_vec1 = np.cross(avg_los_axis, any_vec)
+
+    # Find second plane vector
+    plane_vec2 = np.cross(avg_los_axis, plane_vec1)
+
+    # Find two more points to define plane
+    plane_pt2 = plane_pt1 + plane_vec1 * 5.         # 5. is arbitrary
+    plane_pt3 = plane_pt1 + plane_vec2 * 5.         # 5. is arbitrary
+
+    # Step thru each LOS and find intersection with plane (call them 'target' points)
+    target = list()         # locations where LOS hit projection plane
+    valid_ic = list()       # indeces (relative to (nchan) array) where LOS makes valid projection
+    for ic in range(nchan):
+        res = intersect_line_plane(plane_pt1, plane_pt2, plane_pt3, aperture, axes[ic, :])
+
+        if res is None:
+            print('Warning: LOS {}, does not intersect projection plane. Ignoring'.format(ic))
+        elif len(res) == 2:
+            print('Warning: LOS {} lies in projection plane. Ignoring'.format(ic))
+        elif len(res) == 3:
+            # Intersection is a point
+            target.append(res)
+            valid_ic.append(ic)
+
+    target = np.array(target)       # (nvalid, 3), all on plane perp to avg_los_axis
+
+    # Remove channels that wont be imaged
+    data = data[valid_ic]   # (nvalid)
+
+    # Rotate target locations into coord sys aligned with avg_los_axis
+    dis = np.sqrt(np.sum((aperture - plane_pt1) ** 2.0))
+    beta = np.arcsin((aperture[2] - plane_pt1[2]) / dis)
+    alpha = np.arctan2((plane_pt1[1] - aperture[1]), (plane_pt1[0] - aperture[0]))
+    gamma = 0.
+    target_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, target.T, origin=plane_pt1).T  # (nvalid, 3)
+
+    # Interpolate data onto uniform grid along target plane
+    n1d = 100    # no. of grid points in each direction
+    x1 = np.linspace(target_rotated[:, 1].min(), target_rotated[:, 1].max(), num = n1d)
+    x2 = np.linspace(target_rotated[:, 2].min(), target_rotated[:, 2].max(), num = n1d + 1)
+    x1_grid, x2_grid = np.meshgrid(x1, x2, indexing='ij')
+    grid_data = interpolate.griddata(target_rotated[:, 1:3], data, (x1_grid, x2_grid), fill_value = 0.)
+
+    return x1_grid, x2_grid, grid_data, valid_ic
 
 
 def vec2vec_rotate(vec1, vec2):
@@ -343,6 +437,7 @@ class Spectra:
             self.third_on_imaging = tk.BooleanVar(value = nml['calc_bes'] > 0)
             self.halo_on_imaging = tk.BooleanVar(value = nml['calc_bes'] > 0)
             self.fida_on_imaging = tk.BooleanVar(value = nml['calc_fida'] > 0)
+            self.brems_on_imaging = tk.BooleanVar(value = nml['calc_brems'] > 0)
 
             if self.brems_on.get():
                 self.brems = spec['brems']
@@ -449,13 +544,13 @@ class Spectra:
         else: print('SPECTRA: No file')
 
     def plot_spec_image(self, fig, canvas):
-        """Plot 2D contour of line-integrated spectra
+        """Plot 2D contour of line-integrated spectra excluding brems
         """
         torf = lambda T: 1. if T else 0.
 
         lens = self.lenses[self.lens.get()]     # this lens index (0 to nlenses-1)
         ch = self.uniq_lens_indeces[lens]       # (this_nchan), indeces for this lens
-        this_nchan = ch.size                    # number of channels for this lens
+#        this_nchan = ch.size                    # number of channels for this lens
 
         full_on = self.full_on_imaging.get()
         half_on = self.half_on_imaging.get()
@@ -465,6 +560,7 @@ class Spectra:
 
         fig.clf()
         ax = fig.add_subplot(111)
+        ax.axis('equal')
 
         if (self.full is not None):
             full = self.full[ch, :]
@@ -472,13 +568,6 @@ class Spectra:
             full = 0.
             if full_on:
                 print('No full spectra found')
-
-#        if full_on and (self.full is not None):
-#            full = self.full[ch, :]
-#        else:
-#            full = 0.
-#            if full_on and self.full is None:
-#                print('No full spectra found')
 
         if (self.half is not None):
             half = self.half[ch, :]
@@ -508,133 +597,80 @@ class Spectra:
             if fida_on:
                 print('No fida spectra found')
 
-#        if self.third_on_imaging.get() and (self.third is not None):
-#            third = self.third[ch, :]
-#        else:
-#            third = 0.
-#            if self.third is None:
-#                print('No third spectra found')
-#
-#        if self.halo_on_imaging.get() and (self.halo is not None):
-#            halo = self.halo[ch, :]
-#        else:
-#            halo = 0.
-#            if self.halo is None:
-#                print('No halo spectra found')
-#
-#        if self.fida_on_imaging.get() and (self.fida is not None):
-#            fida = self.fida[ch, :]
-#        else:
-#            fida = 0.
-#            if self.fida is None:
-#                print('No fida spectra found')
-
-#        if (self.fida is not None) or (self.full is not None) or (self.half is not None) or (self.third is not None) or \
-#            (self.halo is not None):
         if (fida_on) or (full_on) or (half_on) or (third_on) or (halo_on):
-            spec = full * torf(self.full_on_imaging.get()) + half * torf(self.half_on_imaging.get()) + \
-                   third * torf(self.third_on_imaging.get()) + halo * torf(self.halo_on_imaging.get()) + \
-                   fida * torf(self.fida_on_imaging.get())
+            spec = full * torf(full_on) + half * torf(half_on) + \
+                   third * torf(third_on) + halo * torf(halo_on) + \
+                   fida * torf(fida_on)
 
             # Integrate over wavelengths
             w = (self.lam >= float(self.wl_min_imaging.get())) & (self.lam <= float(self.wl_max_imaging.get()))
             spec = integrate.simps(spec[:, w], x = self.lam[w], axis = 1)  # (this_nchan)
 
-            # General method: Project views onto plane projection_dist away from lens along avg lens axis
             projection_dist = 100.                      # arbitary for now, make tk variable
-            lens_axis = self.lens_axis[ch, :]           # (this_nchan, 3)
-            lens_axis_avg = lens_axis.mean(0)           # (3)
-            lens_loc = self.lens_loc[ch[0], :]          # (3), same for all in ch
+            lens_axis = self.lens_axis[ch, :]           # (this_nchan, 3), all LOS axes for this lens
+#            lens_axis_avg = lens_axis.mean(0)           # (3)
+            lens_loc = self.lens_loc[ch[0], :]          # (3), same for all in ch (for TAE data)
 
-#            print(lens_axis.shape, lens_axis_avg.shape, lens_loc.shape, spec.shape)
+            yp_grid, zp_grid, grid_spec, valid_ic = project_image(projection_dist, lens_axis, lens_loc, spec)
 
-            # Find point projection_dist along lens axis (ie point on plane pierced by lens axis line)
-            t = np.sqrt(projection_dist ** 2 / np.sum(lens_axis_avg ** 2))
-            plane_pt1 = lens_loc + lens_axis_avg * t
-
-            # Find any vector perp to lens_axis_avg (by crossing w/ any non-colinear vector) to define the plane
-            any_vec = np.array([lens_axis_avg[0] + 5., lens_axis_avg[1], lens_axis_avg[2]])   # 5. is arbitrary
-            plane_vec1 = np.cross(lens_axis_avg, any_vec)
-
-            # Find second plane vector
-            plane_vec2 = np.cross(lens_axis_avg, plane_vec1)
-
-            # Find two more points to define plane
-            plane_pt2 = plane_pt1 + plane_vec1 * 5.         # 5. is arbitrary
-            plane_pt3 = plane_pt1 + plane_vec2 * 5.         # 5. is arbitrary
-
-            # Step thru each channel for this lens and find intersection with plane (call 'target' points)
-            target = list()
-            valid_ic = list()
-            for ic in range(this_nchan):
-                res = intersect_line_plane(plane_pt1, plane_pt2, plane_pt3, lens_loc, lens_axis[ic, :])
-
-                if res is None:
-                    msg = 'Warning: {}, channel {}, overall channel {}, does not intersect projection plane. Ignoring.'
-                    print(msg.format(self.lens.get(), ic, ch[ic] + 1))
-                elif len(res) == 2:
-                    msg = 'Warning: {}, channel {}, overall channel {}, lies in projection plane. Ignoring.'
-                    print(msg.format(self.lens.get(), ic, ch[ic] + 1))
-                elif len(res) == 3:
-                    # Intersection is a point
-                    target.append(res)
-                    valid_ic.append(ic)
-
-            nvalid = len(valid_ic)
-            target = np.array(target)       # (nvalid, 3), all on plane perp to lens_axis_avg
-
-            # are target points all actually on one plane --> YES!
-#            for i in range(nvalid - 1):
-#                print(np.dot(target[i, :] - target[i + 1, :], lens_axis_avg))
-
-            # Remove channels that wont be imaged
-            spec = spec[valid_ic]   # (nvalid)
-            ch = ch[valid_ic]
-
-
-            # Now need to make uniform grid in plane and triangulate spec onto that grid
-#            rot_mat = vec2vec_rotate([1., 0., 0.], lens_axis_avg)
-
-            # Alternative rot matrix
-            dis = np.sqrt(np.sum((lens_loc - plane_pt1) ** 2.0))
-            beta = np.arcsin((lens_loc[2] - plane_pt1[2]) / dis)
-            alpha = np.arctan2((plane_pt1[1] - lens_loc[1]), (plane_pt1[0] - lens_loc[0]))
-            gamma = 0.
-            rot_mat = fs.preprocessing.tb_zyx(alpha, beta, gamma)
-
-#            print(rot_mat)
-#            print(rot_mat2)
-
-            target_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, target.T, origin=plane_pt1).T  # (nvalid, 3)
-
-            n1d = 100    # no. of grid points in each direction
-            yp = np.linspace(target_rotated[:, 1].min(), target_rotated[:, 1].max(), num = n1d)
-            zp = np.linspace(target_rotated[:, 2].min(), target_rotated[:, 2].max(), num = n1d + 1)
-            yp_grid, zp_grid = np.meshgrid(yp, zp, indexing='ij')
-            grid_spec = interpolate.griddata(target_rotated[:, 1:3], spec, (yp_grid, zp_grid), fill_value = 0.)
-
-#            print(grid_spec.shape)
-
-            # return to orgin system using: print(np.all(np.isclose(np.dot(rot_mat, target_rotated.T).T + plane_pt1, target)))
-
-#            target_rotated = np.copy(target)
-
-            # Shift origin
-#            target_rotated = target_rotated + np.tile(plane_pt1, (nvalid, 1))
-
-            # Apply rotation matrix
-#            target_rotated = np.dot(rot_mat, target_rotated.T).T
-
-            # Shift origin
-#            target_rotated = target_rotated + np.tile(plane_pt1, (nvalid, 1))
-
-#            print(target_rotated)
+#            # General method: Project views onto plane projection_dist away from lens along avg lens axis
+#            projection_dist = 100.                      # arbitary for now, make tk variable
+#            lens_axis = self.lens_axis[ch, :]           # (this_nchan, 3)
+#            lens_axis_avg = lens_axis.mean(0)           # (3)
+#            lens_loc = self.lens_loc[ch[0], :]          # (3), same for all in ch
 #
-#            print(np.dot(target_rotated[1, :] - target_rotated[0, :], lens_axis_avg))
-
-#            for i in range(nvalid - 1):
-#                print(np.dot(target_rotated[i, :] - target_rotated[i + 1, :], [1., 0., 0.]))
-
+#            # Find point projection_dist along lens axis (ie point on plane pierced by lens axis line)
+#            t = np.sqrt(projection_dist ** 2 / np.sum(lens_axis_avg ** 2))
+#            plane_pt1 = lens_loc + lens_axis_avg * t
+#
+#            # Find any vector perp to lens_axis_avg (by crossing w/ any non-colinear vector) to define the plane
+#            any_vec = np.array([lens_axis_avg[0] + 5., lens_axis_avg[1], lens_axis_avg[2]])   # 5. is arbitrary
+#            plane_vec1 = np.cross(lens_axis_avg, any_vec)
+#
+#            # Find second plane vector
+#            plane_vec2 = np.cross(lens_axis_avg, plane_vec1)
+#
+#            # Find two more points to define plane
+#            plane_pt2 = plane_pt1 + plane_vec1 * 5.         # 5. is arbitrary
+#            plane_pt3 = plane_pt1 + plane_vec2 * 5.         # 5. is arbitrary
+#
+#            # Step thru each channel for this lens and find intersection with plane (call 'target' points)
+#            target = list()
+#            valid_ic = list()
+#            for ic in range(this_nchan):
+#                res = intersect_line_plane(plane_pt1, plane_pt2, plane_pt3, lens_loc, lens_axis[ic, :])
+#
+#                if res is None:
+#                    msg = 'Warning: {}, channel {}, overall channel {}, does not intersect projection plane. Ignoring.'
+#                    print(msg.format(self.lens.get(), ic, ch[ic] + 1))
+#                elif len(res) == 2:
+#                    msg = 'Warning: {}, channel {}, overall channel {}, lies in projection plane. Ignoring.'
+#                    print(msg.format(self.lens.get(), ic, ch[ic] + 1))
+#                elif len(res) == 3:
+#                    # Intersection is a point
+#                    target.append(res)
+#                    valid_ic.append(ic)
+#
+##            nvalid = len(valid_ic)
+#            target = np.array(target)       # (nvalid, 3), all on plane perp to lens_axis_avg
+#
+#            # Remove channels that wont be imaged
+#            spec = spec[valid_ic]   # (nvalid)
+#            ch = ch[valid_ic]
+#
+#            # Alternative rot matrix
+#            dis = np.sqrt(np.sum((lens_loc - plane_pt1) ** 2.0))
+#            beta = np.arcsin((lens_loc[2] - plane_pt1[2]) / dis)
+#            alpha = np.arctan2((plane_pt1[1] - lens_loc[1]), (plane_pt1[0] - lens_loc[0]))
+#            gamma = 0.
+#
+#            target_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, target.T, origin=plane_pt1).T  # (nvalid, 3)
+#
+#            n1d = 100    # no. of grid points in each direction
+#            yp = np.linspace(target_rotated[:, 1].min(), target_rotated[:, 1].max(), num = n1d)
+#            zp = np.linspace(target_rotated[:, 2].min(), target_rotated[:, 2].max(), num = n1d + 1)
+#            yp_grid, zp_grid = np.meshgrid(yp, zp, indexing='ij')
+#            grid_spec = interpolate.griddata(target_rotated[:, 1:3], spec, (yp_grid, zp_grid), fill_value = 0.)
 
             # Plot contour
             c = ax.contourf(yp_grid, zp_grid, grid_spec, 50)
@@ -647,22 +683,41 @@ class Spectra:
             cb = fig.colorbar(c)
             ax.set_title('No data selected')
 
-#            if self.legend_on.get(): ax.legend()
-#            ax.set_yscale('log')
-#            ax.set_xlabel('Wavelength [nm]')
-#            ax.set_ylabel('$Ph\ /\ (s\ nm\ sr\ m^2)$')
-#            ax.set_title(self.chan.get())
-#            ax.set_xlim([float(self.wl_min.get()), float(self.wl_max.get())])
-#            canvas.show()
-
     def plot_brems_image(self, fig, canvas):
-        print('Not implemented yet')
-#        if self.brems_on.get():
-#            if self.brems is None:
-#                print('No brems spectra found')
-#            else:
-#                brems = self.brems[ch, :]
-#                ax.plot(lam, brems, label = 'Brems')
+        """Plot 2D contour of line-integrated brems
+        """
+        lens = self.lenses[self.lens.get()]     # this lens index (0 to nlenses-1)
+        ch = self.uniq_lens_indeces[lens]       # (this_nchan), indeces for this lens
+
+        fig.clf()
+        ax = fig.add_subplot(111)
+        ax.axis('equal')
+
+        if (self.brems is None):
+            if self.brems_on_imaging.get():
+                print('No brems spectra found')
+            c = ax.contourf([[0,0],[0,0]])
+            cb = fig.colorbar(c)
+            ax.set_title('No data to plot')
+        else:
+            brems = self.brems[ch, :]
+
+            # Integrate over wavelengths
+            w = (self.lam >= float(self.wl_min_imaging.get())) & (self.lam <= float(self.wl_max_imaging.get()))
+            spec = integrate.simps(brems[:, w], x = self.lam[w], axis = 1)  # (this_nchan)
+
+            projection_dist = 100.                      # arbitary for now, make tk variable
+            lens_axis = self.lens_axis[ch, :]           # (this_nchan, 3), all LOS axes for this lens
+            lens_loc = self.lens_loc[ch[0], :]          # (3), same for all in ch (for TAE data)
+
+            yp_grid, zp_grid, grid_spec, valid_ic = project_image(projection_dist, lens_axis, lens_loc, spec)
+
+             # Plot contour
+            c = ax.contourf(yp_grid, zp_grid, grid_spec, 50)
+            cb = fig.colorbar(c)
+            cb.ax.set_ylabel('[$Ph\ /\ (s\ sr\ m^2)$]')
+            ax.set_title('Intensity')
+            canvas.show()
 
 
 class NPA:
@@ -907,6 +962,8 @@ class Neutrals:
         if self._has_neut and (full_on or half_on or third_on or halo_on):
             fig.clf()
             ax = fig.add_subplot(111)
+            ax.axis('equal')
+
             pt = self.plot_type.get()
 
             if pt == 'X':
