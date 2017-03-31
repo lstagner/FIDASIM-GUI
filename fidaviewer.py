@@ -457,30 +457,81 @@ class Spectra:
         ch = self.uniq_lens_indeces[lens]       # (this_nchan), indeces for this lens
         this_nchan = ch.size                    # number of channels for this lens
 
+        full_on = self.full_on_imaging.get()
+        half_on = self.half_on_imaging.get()
+        third_on = self.third_on_imaging.get()
+        halo_on = self.halo_on_imaging.get()
+        fida_on = self.fida_on_imaging.get()
+
         fig.clf()
         ax = fig.add_subplot(111)
 
-        if self.full_on_imaging.get():
-            if self.full is None:
-                print('No beam spectra found')
-                full = 0.
-                half = 0.
-                third = 0.
-                halo = 0.
-            else:
-                full = self.full[ch, :]
-                half = self.half[ch, :]
-                third = self.third[ch, :]
-                halo = self.halo[ch, :]
+        if (self.full is not None):
+            full = self.full[ch, :]
+        else:
+            full = 0.
+            if full_on:
+                print('No full spectra found')
 
-        if self.fida_on_imaging.get():
-            if self.fida is None:
-                print('No FIDA spectra found')
-                fida = 0.
-            else:
-                fida = self.fida[ch, :]
+#        if full_on and (self.full is not None):
+#            full = self.full[ch, :]
+#        else:
+#            full = 0.
+#            if full_on and self.full is None:
+#                print('No full spectra found')
 
-        if (self.fida is not None) or (self.full is not None):
+        if (self.half is not None):
+            half = self.half[ch, :]
+        else:
+            half = 0.
+            if half_on:
+                print('No half spectra found')
+
+        if (self.third is not None):
+            third = self.third[ch, :]
+        else:
+            third = 0.
+            if third_on:
+                print('No third spectra found')
+
+        if (self.halo is not None):
+            halo = self.halo[ch, :]
+        else:
+            halo = 0.
+            if halo_on:
+                print('No halo spectra found')
+
+        if (self.fida is not None):
+            fida = self.fida[ch, :]
+        else:
+            fida = 0.
+            if fida_on:
+                print('No fida spectra found')
+
+#        if self.third_on_imaging.get() and (self.third is not None):
+#            third = self.third[ch, :]
+#        else:
+#            third = 0.
+#            if self.third is None:
+#                print('No third spectra found')
+#
+#        if self.halo_on_imaging.get() and (self.halo is not None):
+#            halo = self.halo[ch, :]
+#        else:
+#            halo = 0.
+#            if self.halo is None:
+#                print('No halo spectra found')
+#
+#        if self.fida_on_imaging.get() and (self.fida is not None):
+#            fida = self.fida[ch, :]
+#        else:
+#            fida = 0.
+#            if self.fida is None:
+#                print('No fida spectra found')
+
+#        if (self.fida is not None) or (self.full is not None) or (self.half is not None) or (self.third is not None) or \
+#            (self.halo is not None):
+        if (fida_on) or (full_on) or (half_on) or (third_on) or (halo_on):
             spec = full * torf(self.full_on_imaging.get()) + half * torf(self.half_on_imaging.get()) + \
                    third * torf(self.third_on_imaging.get()) + halo * torf(self.halo_on_imaging.get()) + \
                    fida * torf(self.fida_on_imaging.get())
@@ -558,11 +609,11 @@ class Spectra:
 
             n1d = 100    # no. of grid points in each direction
             yp = np.linspace(target_rotated[:, 1].min(), target_rotated[:, 1].max(), num = n1d)
-            zp = np.linspace(target_rotated[:, 2].min(), target_rotated[:, 2].max(), num = n1d)
+            zp = np.linspace(target_rotated[:, 2].min(), target_rotated[:, 2].max(), num = n1d + 1)
             yp_grid, zp_grid = np.meshgrid(yp, zp, indexing='ij')
             grid_spec = interpolate.griddata(target_rotated[:, 1:3], spec, (yp_grid, zp_grid), fill_value = 0.)
 
-            print(grid_spec.shape)
+#            print(grid_spec.shape)
 
             # return to orgin system using: print(np.all(np.isclose(np.dot(rot_mat, target_rotated.T).T + plane_pt1, target)))
 
@@ -586,12 +637,15 @@ class Spectra:
 
 
             # Plot contour
-#            c = ax.contourf(x, y, spec, 50)
-#            cb = fig.colorbar(c)
-#            cb.ax.set_ylabel('[$Ph\ /\ (s\ sr\ m^2)$]')
-#            ax.set_title('Intensity')
-#            canvas.show()
-
+            c = ax.contourf(yp_grid, zp_grid, grid_spec, 50)
+            cb = fig.colorbar(c)
+            cb.ax.set_ylabel('[$Ph\ /\ (s\ sr\ m^2)$]')
+            ax.set_title('Intensity')
+            canvas.show()
+        else:
+            c = ax.contourf([[0,0],[0,0]])
+            cb = fig.colorbar(c)
+            ax.set_title('No data selected')
 
 #            if self.legend_on.get(): ax.legend()
 #            ax.set_yscale('log')
