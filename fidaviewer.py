@@ -314,6 +314,14 @@ class Spectra:
 
             self.dlam = np.abs(self.lam[1] - self.lam[0])
 
+            # Booleans for each spectra type
+            self.has_bes = (nml['calc_bes'] > 0)
+#            has_half = (nml['calc_bes'] > 0)
+#            has_third = (nml['calc_bes'] > 0)
+#            has_halo = (nml['calc_bes'] > 0)
+            self.has_fida = (nml['calc_fida'] > 0)
+            self.has_brems = (nml['calc_brems'] > 0)
+
             # Spectra frame variables
             self.wl_min = tk.StringVar(value = str(np.min(self.lam)))
             self.wl_max = tk.StringVar(value = str(np.max(self.lam)))
@@ -334,17 +342,38 @@ class Spectra:
             self.brems_on_imaging = tk.BooleanVar(value = nml['calc_brems'] > 0)
             self.projection_dist = tk.StringVar(value = 100.)
 
-            if self.brems_on.get():
+#            if self.brems_on.get():
+#                self.brems = spec['brems']
+#            else:
+#                self.brems = None
+#
+#            if self.fida_on.get():
+#                self.fida = spec['fida']
+#            else:
+#                self.fida = None
+#
+#            if self.nbi_on.get():
+#                self.full = spec['full']
+#                self.half = spec['half']
+#                self.third = spec['third']
+#                self.halo = spec['halo']
+#            else:
+#                self.full = None
+#                self.half = None
+#                self.third = None
+#                self.halo = None
+
+            if self.has_brems:
                 self.brems = spec['brems']
             else:
                 self.brems = None
 
-            if self.fida_on.get():
+            if self.has_fida:
                 self.fida = spec['fida']
             else:
                 self.fida = None
 
-            if self.nbi_on.get():
+            if self.has_bes:
                 self.full = spec['full']
                 self.half = spec['half']
                 self.third = spec['third']
@@ -373,7 +402,7 @@ class Spectra:
             else:
                 print('No geometry file found')
         else:
-            print('No spectra found')
+            print('No spectra file found')
 
     def plot_spectra(self, fig, canvas):
         if self._has_spectra:
@@ -383,17 +412,36 @@ class Spectra:
             fig.clf()
             ax = fig.add_subplot(111)
 
+#            if self.brems_on.get():
+#                if self.brems is None:
+#                    print('No brems spectra found')
+#                else:
+#                    brems = self.brems[ch, :]
+#                    ax.plot(lam, brems, label = 'Brems')
+
             if self.brems_on.get():
-                if self.brems is None:
-                    print('No brems spectra found')
-                else:
+                if self.has_brems:
                     brems = self.brems[ch, :]
                     ax.plot(lam, brems, label = 'Brems')
+                else:
+                    print('No brems spectra available')
+
+#            if self.nbi_on.get():
+#                if self.full is None:
+#                    print('No beam spectra available')
+#                else:
+#                    full = self.full[ch, :]
+#                    half = self.half[ch, :]
+#                    third = self.third[ch, :]
+#                    halo = self.halo[ch, :]
+#
+#                    ax.plot(lam, full, label = 'Full')
+#                    ax.plot(lam, half, label = 'Half')
+#                    ax.plot(lam, third, label = 'Third')
+#                    ax.plot(lam, halo, label = 'Halo')
 
             if self.nbi_on.get():
-                if self.full is None:
-                    print('No beam spectra found')
-                else:
+                if self.has_bes:
                     full = self.full[ch, :]
                     half = self.half[ch, :]
                     third = self.third[ch, :]
@@ -403,16 +451,26 @@ class Spectra:
                     ax.plot(lam, half, label = 'Half')
                     ax.plot(lam, third, label = 'Third')
                     ax.plot(lam, halo, label = 'Halo')
+                else:
+                   print('No beam spectra available')
+
+#            if self.fida_on.get():
+#                if self.fida is None:
+#                    print('No FIDA spectra available')
+#                else:
+#                    fida = self.fida[ch, :]
+#                    ax.plot(lam, fida, label = 'Fida')
 
             if self.fida_on.get():
-                if self.fida is None:
-                    print('No FIDA spectra found')
-                else:
+                if self.has_fida:
                     fida = self.fida[ch, :]
                     ax.plot(lam, fida, label = 'Fida')
+                else:
+                    print('No FIDA spectra available')
 
             if self.brems_on.get() or self.fida_on.get() or self.nbi_on.get():
-                if self.legend_on.get(): ax.legend()
+                if self.legend_on.get():
+                    ax.legend()
                 ax.set_yscale('log')
                 ax.set_xlabel('Wavelength [nm]')
                 ax.set_ylabel('$Ph\ /\ (s\ nm\ sr\ m^2)$')
@@ -510,6 +568,8 @@ class Spectra:
             yp_grid, zp_grid, grid_spec, valid_ic = project_image(float(self.projection_dist.get()), lens_axis, lens_loc, spec)
 
             # Plot contour
+#            ax = fig.add_subplot(111)
+#            ax.axis('equal')
             c = ax.contourf(yp_grid, zp_grid, grid_spec, 50)
             cb = fig.colorbar(c)
             cb.ax.set_ylabel('[$Ph\ /\ (s\ sr\ m^2)$]')
@@ -522,7 +582,7 @@ class Spectra:
 #            cb = fig.colorbar(c)
 #            ax.set_title('No data selected')
 #            canvas.delete("all")
-            pass
+            fig.clf()
             # How to clear plot here?
 
     def plot_brems_image(self, fig, canvas):
