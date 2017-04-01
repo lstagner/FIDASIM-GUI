@@ -724,7 +724,7 @@ class Weights:
 
 class Neutrals:
     """ Neutrals object that contains plot methods and parameters"""
-    def __init__(self,nml):
+    def __init__(self, nml):
         dir = nml["result_dir"]
         runid = nml["runid"]
         neut_file = os.path.join(dir,runid+'_neutrals.h5')
@@ -746,7 +746,7 @@ class Neutrals:
             neut = load_dict_from_hdf5(neut_file)
 
             # All grids and gridded data to --> (nx, ny, nz)
-            self.fdens = neut['fdens'].sum(3).T   # sum over energy state
+            self.fdens = neut['fdens'].sum(3).T        # sum over energy state
             self.hdens = neut['hdens'].sum(3).T
             self.tdens = neut['tdens'].sum(3).T
             self.halodens = neut['halodens'].sum(3).T
@@ -763,7 +763,7 @@ class Neutrals:
             # Are beam and machine coordinates the same?
             self.beam_mach_same = np.array_equal(self.x_grid, self.x_grid_beam) and np.array_equal(self.y_grid, self.y_grid_beam) and np.array_equal(self.z_grid, self.z_grid_beam)
         else:
-            print('No neutrals found')
+            print('No neutrals file found')
 
         ## Radio Buttons Variable
         self.plot_type = tk.StringVar(value = 'XY')
@@ -791,8 +791,7 @@ class Neutrals:
 
             if pt == 'X':
                 if self.use_mach_coords.get() and not self.beam_mach_same:
-                    # Use machine coords and they're not the same as beam coords
-
+                    # Use machine coords and they're not the same as beam coords (so must rebin)
                     ax.set_xlabel('X [cm]')
 
                     # Need to bin data onto mach regular grid before taking projections
@@ -841,7 +840,7 @@ class Neutrals:
 
             if pt == 'Y':
                 if self.use_mach_coords.get() and not self.beam_mach_same:
-                    # Use machine coords and they're not the same as beam coords
+                    # Use machine coords and they're not the same as beam coords (so must rebin)
 
                     ax.set_xlabel('Y [cm]')
 
@@ -891,7 +890,7 @@ class Neutrals:
 
             if pt == 'Z':
                 if self.use_mach_coords.get() and not self.beam_mach_same:
-                    # Use machine coords and they're not the same as beam coords
+                    # Use machine coords and they're not the same as beam coords (so must rebin)
                     ax.set_xlabel('Z [cm]')
 
                     # Need to bin data onto mach regular grid before taking projections
@@ -940,7 +939,7 @@ class Neutrals:
 
             if pt == 'XY':
                 if self.use_mach_coords.get() and not self.beam_mach_same:
-                    # Use machine coords and they're not the same as beam coords
+                    # Use machine coords and they're not the same as beam coords (so must rebin)
                     ax.set_xlabel('X [cm]')
                     ax.set_ylabel('Y [cm]')
 
@@ -997,7 +996,7 @@ class Neutrals:
 
             if pt == 'XZ':
                 if self.use_mach_coords.get() and not self.beam_mach_same:
-                    # Use machine coords and they're not the same as beam coords
+                    # Use machine coords and they're not the same as beam coords (so must rebin)
                     ax.set_xlabel('X [cm]')
                     ax.set_ylabel('Z [cm]')
 
@@ -1270,15 +1269,18 @@ class Viewer:
         else:
             ttk.Label(self.imaging_frame, text = '\n\nNo imaging data found').pack()
 
-    def load_nml(self, filename):
+    def read_nml(self, filename):
         nml = f90nml.read(filename)['fidasim_inputs']
+
+        # Use nml dir if results_dir is invalid
+        if not os.path.isdir(nml['result_dir']):
+            nml['result_dir'] = os.path.dirname(filename)
 
         return nml
 
     def load_namelist(self):
         self.namelistfile = askopenfilename(filetypes=[('Namelist Files','*.dat')])
-
-        self.nml = self.load_nml(self.namelistfile)
+        self.nml = self.read_nml(self.namelistfile)
         self.spec = Spectra(self.nml)
         self.npa = NPA(self.nml)
         self.neut = Neutrals(self.nml)
