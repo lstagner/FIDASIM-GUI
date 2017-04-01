@@ -1276,7 +1276,7 @@ class Viewer:
         return nml
 
     def load_namelist(self):
-        self.namelistfile = askopenfilename()
+        self.namelistfile = askopenfilename(filetypes=[('Namelist Files','*.dat')])
 
         self.nml = self.load_nml(self.namelistfile)
         self.spec = Spectra(self.nml)
