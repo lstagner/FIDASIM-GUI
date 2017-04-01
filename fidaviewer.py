@@ -785,7 +785,7 @@ class Neutrals:
         if self._has_neut and (full_on or half_on or third_on or halo_on):
             fig.clf()
             ax = fig.add_subplot(111)
-            ax.axis('equal')
+#            ax.axis('equal')
 
             pt = self.plot_type.get()
 
@@ -988,6 +988,7 @@ class Neutrals:
 
                 dens = fdens * torf(full_on) + hdens * torf(half_on) + tdens * torf(third_on) + halodens * torf(halo_on)
 
+                ax.axis('equal')
                 c = ax.contourf(x, y, dens, 50)
                 cb = fig.colorbar(c)
                 cb.ax.set_ylabel('[$cm^{-3}$]')
@@ -1045,6 +1046,7 @@ class Neutrals:
 
                 dens = fdens * torf(full_on) + hdens * torf(half_on) + tdens * torf(third_on) + halodens * torf(halo_on)
 
+                ax.axis('equal')
                 c = ax.contourf(x,y,dens,50)
                 cb = fig.colorbar(c)
                 cb.ax.set_ylabel('[$cm^{-3}$]')
@@ -1102,6 +1104,7 @@ class Neutrals:
 
                 dens = fdens * torf(full_on) + hdens * torf(half_on) + tdens * torf(third_on) + halodens * torf(halo_on)
 
+                ax.axis('equal')
                 c = ax.contourf(x, y, dens, 50)
                 cb = fig.colorbar(c)
                 cb.ax.set_ylabel('[$cm^{-3}$]')
