@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
 import numpy as np
 import tkinter as tk
-from tkinter.filedialog import askdirectory
+from tkinter.filedialog import askopenfilename
 from tkinter import ttk
 import h5py
 import f90nml
@@ -294,19 +294,18 @@ def find_lenses(nchan, lens_loc):
 
 class Spectra:
     """ Spectra object that contains plot methods and parameters"""
-    def __init__(self, dir, nml):
-        spec_files = glob.glob(dir + '*_spectra.h5')
-        geo_files = glob.glob(dir + '*_geometry.h5')
-        self._has_spectra = (len(spec_files) > 0)
-        self._has_geo = (len(geo_files) > 0)
+    def __init__(self, nml):
+        dir = nml["result_dir"]
+        runid = nml["runid"]
+        spec_file = os.path.join(dir,runid+'_spectra.h5')
+        geo_file = os.path.join(dir,runid+'_geometry.h5')
+        self._has_spectra = os.path.isfile(spec_file)
+        self._has_geo = os.path.isfile(geo_file)
 
         if self._has_spectra:
             print('Loading spectra')
 
-            if len(spec_files) > 1:
-                raise NotImplementedError('Multiple spectra files found')
-            else:
-                spec = load_dict_from_hdf5(spec_files[0])
+            spec = load_dict_from_hdf5(spec_file)
 
             self.lam = spec['lambda']
             self.nchan = spec['nchan']
@@ -318,9 +317,9 @@ class Spectra:
             self.wl_min = tk.StringVar(value = str(np.min(self.lam)))
             self.wl_max = tk.StringVar(value = str(np.max(self.lam)))
             self.chan = tk.StringVar(value = 'Channel 1')
-            self.nbi_on = tk.BooleanVar(value = nml['calc_bes'] > 0)
-            self.fida_on = tk.BooleanVar(value = nml['calc_fida'] > 0)
-            self.brems_on = tk.BooleanVar(value = nml['calc_brems'] > 0)
+            self.nbi_on = tk.BooleanVar(value = ('full' in spec))
+            self.fida_on = tk.BooleanVar(value = ('fida' in spec))
+            self.brems_on = tk.BooleanVar(value = ('brems' in spec))
             self.legend_on = tk.BooleanVar(value = True)
 
             # Imaging frame variables
@@ -334,17 +333,17 @@ class Spectra:
             self.brems_on_imaging = tk.BooleanVar(value = nml['calc_brems'] > 0)
             self.projection_dist = tk.StringVar(value = 100.)
 
-            if self.brems_on.get():
+            if self.brems_on.get() and ('brems' in spec):
                 self.brems = spec['brems']
             else:
                 self.brems = None
 
-            if self.fida_on.get():
+            if self.fida_on.get() and ('fida' in spec):
                 self.fida = spec['fida']
             else:
                 self.fida = None
 
-            if self.nbi_on.get():
+            if self.nbi_on.get() and ('full' in spec):
                 self.full = spec['full']
                 self.half = spec['half']
                 self.third = spec['third']
@@ -357,11 +356,7 @@ class Spectra:
 
             if self._has_geo:
                 print('Loading geometry')
-
-                if len(geo_files) > 1:
-                    raise NotImplementedError('Multiple geometry files found')
-                else:
-                    geo = load_dict_from_hdf5(geo_files[0])
+                geo = load_dict_from_hdf5(geo_file)
 
                 self.lens_loc = geo['spec']['lens']    # (nchan, 3)
                 self.lens_axis = geo['spec']['axis']   # (nchan, 3)
@@ -373,7 +368,7 @@ class Spectra:
             else:
                 print('No geometry file found')
         else:
-            print('No spectra found')
+            print('No Spectra File Found')
 
     def plot_spectra(self, fig, canvas):
         if self._has_spectra:
@@ -567,22 +562,22 @@ class Spectra:
 
 class NPA:
     """ NPA object that contains plot methods and parameters"""
-    def __init__(self,dir):
-        npa_files = glob.glob(dir + '*_npa.h5')
-        wght_files = glob.glob(dir + '*_npa_weights.h5')
-        neut_files = glob.glob(dir + '*_neutrals.h5')
+    def __init__(self,nml):
+        dir = nml["result_dir"]
+        runid = nml["runid"]
+        npa_file = os.path.join(dir,runid+'_npa.h5')
+        wght_file = os.path.join(dir,runid+'_npa_weights.h5')
+        neut_file = os.path.join(dir,runid+'_neutrals.h5')
+        geo_file = os.path.join(dir,runid+'_geometry.h5')
 
-        self._has_npa = (len(npa_files) > 0)
-        self._has_wght = (len(wght_files) > 0)
-        self._has_neut = (len(neut_files) > 0)
+        self._has_npa = os.path.isfile(npa_file)
+        self._has_wght = os.path.isfile(wght_file)
+        self._has_neut = os.path.isfile(neut_file)
+        self._has_geo = os.path.isfile(geo_file)
 
         if self._has_npa:
             print('Loading NPA')
-
-            if len(npa_files) > 1:
-                raise NotImplementedError('Multiple NPA files found')
-            else:
-                npa = load_dict_from_hdf5(npa_files[0])
+            npa = load_dict_from_hdf5(npa_file)
 
             self.npa_energy = npa['energy']
             self.npa_flux = npa['flux']
@@ -592,11 +587,7 @@ class NPA:
 
         if self._has_wght:
             print('Loading NPA weights')
-
-            if len(wght_files) > 1:
-                raise NotImplementedError('Multiple NPA weight files found')
-            else:
-                wght = load_dict_from_hdf5(wght_files[0])
+            wght = load_dict_from_hdf5(wght_file)
 
             self.w_energy = wght['energy']
             self.w_flux = wght['flux']
@@ -605,16 +596,13 @@ class NPA:
 
         if self._has_neut:
 
-            if len(neut_files) > 1:
-                raise NotImplementedError('Multiple neutrals files found')
-            else:
-                neut = load_dict_from_hdf5(neut_files[0])
+            neut = load_dict_from_hdf5(neut_file)
 
             self.dens = neut['fdens'].sum(0).sum(0) + neut['hdens'].sum(0).sum(0) + \
                         neut['tdens'].sum(0).sum(0) + neut['halodens'].sum(0).sum(0)
 
 #        if self._has_geo:
-#            geo = load_dict_from_hdf5(glob.glob(dir + '*_geometry.h5')[0])  #,vars = ['x_grid','y_grid','xlos','ylos','xlens','ylens','chan_id'])
+#            geo = load_dict_from_hdf5(geo_file)  #,vars = ['x_grid','y_grid','xlos','ylos','xlens','ylens','chan_id'])
 #            self.x_grid = geo['x_grid']
 #            self.y_grid = geo['y_grid']
 #            chan_id = geo['chan_id']
@@ -669,20 +657,19 @@ class NPA:
 
 class Weights:
     """ Weights object that contains plot methods and parameters"""
-    def __init__(self,dir):
-        npa_wght_files = glob.glob(dir + '*_npa_weights.h5')
-        fida_wght_files = glob.glob(dir + '*_fida_weights.h5')
+    def __init__(self,nml):
+        dir = nml["result_dir"]
+        runid = nml["runid"]
+        npa_wght_file = os.path.join(dir,runid+'_npa_weights.h5')
+        fida_wght_file = os.path.join(dir,runid+'_fida_weights.h5')
 
-        self._has_npa_wght = (len(npa_wght_files) > 0)
-        self._has_fida_wght = (len(fida_wght_files) > 0)
+        self._has_npa_wght = os.path.isfile(npa_wght_file)
+        self._has_fida_wght = os.path.isfile(fida_wght_file)
 
         if self._has_fida_wght:
             print('Loading FIDA weights')
+            fida = load_dict_from_hdf5(fida_wght_file)
 
-            if len(npa_wght_files) > 1:
-                raise NotImplementedError('Multiple FIDA weight files found')
-            else:
-                fida = load_dict_from_hdf5(fida_wght_files[0])
             self.f_energy = fida['energy']
             self.f_pitch = fida['pitch']
             self.lam = fida['lambda']
@@ -697,10 +684,7 @@ class Weights:
             print('No FIDA weights found')
 
         if self._has_npa_wght:
-            if len(npa_wght_files) > 1:
-                raise NotImplementedError('Multiple NPA weight files found')
-            else:
-                npa = load_dict_from_hdf5(npa_wght_files[0])
+            npa = load_dict_from_hdf5(npa_wght_file)
             self.n_energy = npa['energy']
             self.n_pitch = npa['pitch']
             self.n_wght = npa['weight']
@@ -740,20 +724,18 @@ class Weights:
 
 class Neutrals:
     """ Neutrals object that contains plot methods and parameters"""
-    def __init__(self, dir):
-        neut_files = glob.glob(dir + '*_neutrals.h5')
-        geo_files = glob.glob(dir + '*_geometry.h5')
+    def __init__(self,nml):
+        dir = nml["result_dir"]
+        runid = nml["runid"]
+        neut_file = os.path.join(dir,runid+'_neutrals.h5')
+        geo_file = os.path.join(dir,runid+'_geometry.h5')
 
-        self._has_neut = (len(neut_files) > 0)
-        self._has_geo = (len(geo_files) > 0)
+        self._has_neut = os.path.isfile(neut_file)
+        self._has_geo = os.path.isfile(geo_file)
 
         if self._has_geo:
             print('Loading geometry')
-
-            if len(geo_files) > 1:
-                raise NotImplementedError('Multiple geometry files found')
-            else:
-                geo = load_dict_from_hdf5(geo_files[0])
+            geo = load_dict_from_hdf5(geo_file)
 
             self.beam_name = geo['nbi']['name'].decode('UTF-8')
         else:
@@ -761,11 +743,7 @@ class Neutrals:
 
         if self._has_neut:
             print('Loading neutrals')
-
-            if len(neut_files) > 1:
-                raise NotImplementedError('Multiple neutrals files found')
-            else:
-                neut = load_dict_from_hdf5(neut_files[0])
+            neut = load_dict_from_hdf5(neut_file)
 
             # All grids and gridded data to --> (nx, ny, nz)
             self.fdens = neut['fdens'].sum(3).T   # sum over energy state
@@ -1135,14 +1113,14 @@ class Viewer:
     """Class that contains FIDAsim result viewer window"""
     def __init__(self, parent):
 
-        self.load_dir()
-        parent.title('FIDAviewer. {}'.format(self.dir))
+        self.load_namelist()
+        parent.title('FIDAviewer. {}'.format(self.namelistfile))
 
         #Make MenuBar
         self.MenuBar = tk.Menu(parent)
         parent.config(menu = self.MenuBar)
         self.file = tk.Menu(self.MenuBar, tearoff = False)
-        self.file.add_command(label = 'Load Run', command = (lambda: self.load_dir()))
+        self.file.add_command(label = 'Load Run', command = (lambda: self.load_namelist()))
         self.file.add_command(label = 'Quit', command = (lambda: sys.exit()))
         self.MenuBar.add_cascade(label = 'File', menu = self.file, underline = 0)
 
@@ -1292,21 +1270,19 @@ class Viewer:
         else:
             ttk.Label(self.imaging_frame, text = '\n\nNo imaging data found').pack()
 
-    def load_nml(self, dir):
-        nml = f90nml.read(glob.glob(dir + '*_inputs.dat')[0])['fidasim_inputs']
+    def load_nml(self, filename):
+        nml = f90nml.read(filename)['fidasim_inputs']
 
         return nml
 
-    def load_dir(self):
-        self.dir = askdirectory()
-        if self.dir == '': self.dir = os.getcwd()
-        if self.dir[-1] != '/': self.dir += '/'
+    def load_namelist(self):
+        self.namelistfile = askopenfilename()
 
-        self.nml = self.load_nml(self.dir)
-        self.spec = Spectra(self.dir, self.nml)
-        self.npa = NPA(self.dir)
-        self.neut = Neutrals(self.dir)
-        self.wght = Weights(self.dir)
+        self.nml = self.load_nml(self.namelistfile)
+        self.spec = Spectra(self.nml)
+        self.npa = NPA(self.nml)
+        self.neut = Neutrals(self.nml)
+        self.wght = Weights(self.nml)
 
 if __name__ == '__main__':
     root = tk.Tk()
