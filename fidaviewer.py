@@ -292,8 +292,8 @@ class Spectra:
     def __init__(self, nml):
         dir = nml["result_dir"]
         runid = nml["runid"]
-        spec_file = os.path.join(dir,runid+'_spectra.h5')
-        geo_file = os.path.join(dir,runid+'_geometry.h5')
+        spec_file = os.path.join(dir, runid+'_spectra.h5')
+        geo_file = os.path.join(dir, runid+'_geometry.h5')
         self._has_spectra = os.path.isfile(spec_file)
         self._has_geo = os.path.isfile(geo_file)
 
@@ -304,50 +304,70 @@ class Spectra:
 
             self.lam = spec['lambda']
             self.nchan = spec['nchan']
-            self.channels = collections.OrderedDict(('Channel ' + str(i + 1), i) for i in range(self.nchan))
+            self.channels_spectra = collections.OrderedDict(('Channel ' + str(i + 1), i) for i in range(self.nchan))
 
             self.dlam = np.abs(self.lam[1] - self.lam[0])
 
-            # Spectra frame variables
-            self.wl_min = tk.StringVar(value = str(np.min(self.lam)))
-            self.wl_max = tk.StringVar(value = str(np.max(self.lam)))
-            self.chan = tk.StringVar(value = 'Channel 1')
-            self.nbi_on = tk.BooleanVar(value = ('full' in spec))
-            self.fida_on = tk.BooleanVar(value = ('fida' in spec))
-            self.brems_on = tk.BooleanVar(value = ('brems' in spec))
+            # Availability booleans
+            self.has_bes = ('full' in spec)
+#            self.has_half = ('half' in spec)
+#            self.has_third = ('third' in spec)
+#            self.has_halo = ('halo' in spec)
+            self.has_fida = ('fida' in spec)
+            self.has_brems = ('brems' in spec)
+
+            # Spectra frame variables (with initial values)
+            self.wl_min_spectra = tk.StringVar(value = str(np.min(self.lam)))
+            self.wl_max_spectra = tk.StringVar(value = str(np.max(self.lam)))
+            self.chan_spectra = tk.StringVar(value = 'Channel 1')
+            self.bes_on_spectra = tk.BooleanVar(value = self.has_bes)
+            self.fida_on_spectra = tk.BooleanVar(value = self.has_fida)
+            self.brems_on_spectra = tk.BooleanVar(value = self.has_brems)
             self.legend_on = tk.BooleanVar(value = True)
 
-            # Imaging frame variables
+            # Imaging frame variables (with initial values)
             self.wl_min_imaging = tk.StringVar(value = str(np.min(self.lam)))
             self.wl_max_imaging = tk.StringVar(value = str(np.max(self.lam)))
-            self.full_on_imaging = tk.BooleanVar(value = nml['calc_bes'] > 0)
-            self.half_on_imaging = tk.BooleanVar(value = nml['calc_bes'] > 0)
-            self.third_on_imaging = tk.BooleanVar(value = nml['calc_bes'] > 0)
-            self.halo_on_imaging = tk.BooleanVar(value = nml['calc_bes'] > 0)
-            self.fida_on_imaging = tk.BooleanVar(value = nml['calc_fida'] > 0)
-            self.brems_on_imaging = tk.BooleanVar(value = nml['calc_brems'] > 0)
+            self.full_on_imaging = tk.BooleanVar(value = self.has_bes)
+            self.half_on_imaging = tk.BooleanVar(value = self.has_bes)
+            self.third_on_imaging = tk.BooleanVar(value = self.has_bes)
+            self.halo_on_imaging = tk.BooleanVar(value = self.has_bes)
+            self.fida_on_imaging = tk.BooleanVar(value = self.has_fida)
+            self.brems_on_imaging = tk.BooleanVar(value = self.has_brems)
             self.projection_dist = tk.StringVar(value = 100.)
 
-            if self.brems_on.get() and ('brems' in spec):
+#            if self.brems_on_spectra.get() and ('brems' in spec):
+#                self.brems = spec['brems']
+#            else:
+#                self.brems = None
+#
+#            if self.fida_on_spectra.get() and ('fida' in spec):
+#                self.fida = spec['fida']
+#            else:
+#                self.fida = None
+#
+#            if self.bes_on_spectra.get() and ('full' in spec):
+#                self.full = spec['full']
+#                self.half = spec['half']
+#                self.third = spec['third']
+#                self.halo = spec['halo']
+#            else:
+#                self.full = None
+#                self.half = None
+#                self.third = None
+#                self.halo = None
+
+            if self.has_brems:
                 self.brems = spec['brems']
-            else:
-                self.brems = None
 
-            if self.fida_on.get() and ('fida' in spec):
+            if self.has_fida:
                 self.fida = spec['fida']
-            else:
-                self.fida = None
 
-            if self.nbi_on.get() and ('full' in spec):
+            if self.has_bes:
                 self.full = spec['full']
                 self.half = spec['half']
                 self.third = spec['third']
                 self.halo = spec['halo']
-            else:
-                self.full = None
-                self.half = None
-                self.third = None
-                self.halo = None
 
             if self._has_geo:
                 print('Loading geometry')
@@ -367,69 +387,65 @@ class Spectra:
 
     def plot_spectra(self, fig, canvas):
         if self._has_spectra:
-            ch = self.channels[self.chan.get()]
+            ch = self.channels_spectra[self.chan_spectra.get()]
             lam = self.lam
 
             fig.clf()
             ax = fig.add_subplot(111)
 
-            if self.brems_on.get():
-                if self.brems is None:
-                    print('No brems spectra found')
+            if self.brems_on_spectra.get():
+                if self.has_brems:
+                    ax.plot(lam, self.brems[ch, :], label = 'Brems')
                 else:
-                    brems = self.brems[ch, :]
-                    ax.plot(lam, brems, label = 'Brems')
+                    print('No brems spectra available')
 
-            if self.nbi_on.get():
-                if self.full is None:
-                    print('No beam spectra found')
+            if self.bes_on_spectra.get():
+                if self.has_bes:
+                    ax.plot(lam, self.full[ch, :], label = 'Full')
+                    ax.plot(lam, self.half[ch, :], label = 'Half')
+                    ax.plot(lam, self.third[ch, :], label = 'Third')
+                    ax.plot(lam, self.halo[ch, :], label = 'Halo')
                 else:
-                    full = self.full[ch, :]
-                    half = self.half[ch, :]
-                    third = self.third[ch, :]
-                    halo = self.halo[ch, :]
+                    print('No beam spectra available')
 
-                    ax.plot(lam, full, label = 'Full')
-                    ax.plot(lam, half, label = 'Half')
-                    ax.plot(lam, third, label = 'Third')
-                    ax.plot(lam, halo, label = 'Halo')
-
-            if self.fida_on.get():
-                if self.fida is None:
-                    print('No FIDA spectra found')
+            if self.fida_on_spectra.get():
+                if self.has_fida:
+                    ax.plot(lam, self.fida[ch, :], label = 'Fida')
                 else:
-                    fida = self.fida[ch, :]
-                    ax.plot(lam, fida, label = 'Fida')
+                    print('No FIDA spectra available')
 
-            if self.brems_on.get() or self.fida_on.get() or self.nbi_on.get():
-                if self.legend_on.get(): ax.legend()
+            if self.brems_on_spectra.get() or self.fida_on_spectra.get() or self.bes_on_spectra.get():
+                if self.legend_on.get():
+                    ax.legend()
                 ax.set_yscale('log')
                 ax.set_xlabel('Wavelength [nm]')
                 ax.set_ylabel('$Ph\ /\ (s\ nm\ sr\ m^2)$')
-                ax.set_title(self.chan.get())
-                ax.set_xlim([float(self.wl_min.get()), float(self.wl_max.get())])
+                ax.set_title(self.chan_spectra.get())
+                ax.set_xlim([float(self.wl_min_spectra.get()), float(self.wl_max_spectra.get())])
                 canvas.show()
             else:
                 print('SPECTRA: No Spectra Selected')
         else:
-            print('SPECTRA: No file')
+            print('No Spectra File Found')
 
     def plot_intensity(self, fig, canvas):
         if self._has_spectra:
-            w1 = (self.lam >= float(self.wl_min.get()))
-            w2 = (self.lam <= float(self.wl_max.get()))
+            w1 = (self.lam >= float(self.wl_min_spectra.get()))
+            w2 = (self.lam <= float(self.wl_max_spectra.get()))
             w = np.logical_and(w1, w2)
-            intens = np.sum(self.fida[:, w], axis = 1) * self.dlam
+#            intens = np.sum(self.fida[:, w], axis = 1) * self.dlam
+            intens = integrate.simps(self.fida[:, w], x = self.lam[w], axis = 1)
             ch = range(1, len(intens) + 1)
             fig.clf()
             ax = fig.add_subplot(111)
             ax.plot(ch, intens)
+#            ax.plot(ch, integrate.simps(self.fida[:, w], x = self.lam[w], axis = 1))   # Why isn't this the same???
             ax.set_title('FIDA Intensity vs. Channel')
             ax.set_ylabel('$Ph\ /\ (s\ sr\ m^2)$')
             ax.set_xlabel('Channel Number')
             ax.set_yscale('log')
             canvas.show()
-        else: print('SPECTRA: No file')
+        else: print('No Spectra File Found')
 
     def plot_spec_image(self, fig, canvas):
         """Plot 2D contour of line-integrated spectra excluding brems
@@ -449,45 +465,64 @@ class Spectra:
         ax = fig.add_subplot(111)
         ax.axis('equal')
 
-        if (self.full is not None):
+#        if (self.full is not None):
+#            full = self.full[ch, :]
+#        else:
+#            full = 0.
+#            if full_on:
+#                print('No full spectra found')
+#
+#        if (self.half is not None):
+#            half = self.half[ch, :]
+#        else:
+#            half = 0.
+#            if half_on:
+#                print('No half spectra found')
+#
+#        if (self.third is not None):
+#            third = self.third[ch, :]
+#        else:
+#            third = 0.
+#            if third_on:
+#                print('No third spectra found')
+#
+#        if (self.halo is not None):
+#            halo = self.halo[ch, :]
+#        else:
+#            halo = 0.
+#            if halo_on:
+#                print('No halo spectra found')
+#
+#        if (self.fida is not None):
+#            fida = self.fida[ch, :]
+#        else:
+#            fida = 0.
+#            if fida_on:
+#                print('No fida spectra found')
+
+        if self.has_bes:
             full = self.full[ch, :]
-        else:
-            full = 0.
-            if full_on:
-                print('No full spectra found')
-
-        if (self.half is not None):
             half = self.half[ch, :]
-        else:
-            half = 0.
-            if half_on:
-                print('No half spectra found')
-
-        if (self.third is not None):
             third = self.third[ch, :]
-        else:
-            third = 0.
-            if third_on:
-                print('No third spectra found')
-
-        if (self.halo is not None):
             halo = self.halo[ch, :]
         else:
+            full = 0.
+            half = 0.
+            third = 0.
             halo = 0.
-            if halo_on:
-                print('No halo spectra found')
+            if full_on or half_on or third_on or halo_on:
+                print('No beam spectra available')
 
-        if (self.fida is not None):
+        if self.has_fida:
             fida = self.fida[ch, :]
         else:
             fida = 0.
             if fida_on:
-                print('No fida spectra found')
+                print('No FIDA spectra available')
 
         if (fida_on) or (full_on) or (half_on) or (third_on) or (halo_on):
-            spec = full * torf(full_on) + half * torf(half_on) + \
-                   third * torf(third_on) + halo * torf(halo_on) + \
-                   fida * torf(fida_on)
+            spec = full * torf(full_on) + half * torf(half_on) + third * torf(third_on) + \
+                   halo * torf(halo_on) + fida * torf(fida_on)
 
             # Integrate over wavelengths
             w = (self.lam >= float(self.wl_min_imaging.get())) & (self.lam <= float(self.wl_max_imaging.get()))
@@ -525,14 +560,7 @@ class Spectra:
         ax = fig.add_subplot(111)
         ax.axis('equal')
 
-        if (self.brems is None):
-#            if self.brems_on_imaging.get():
-            print('No brems spectra found')
-            # How to clear plot here?
-#            c = ax.contourf([[0,0],[0,0]])
-#            cb = fig.colorbar(c)
-#            ax.set_title('No data to plot')
-        else:
+        if self.has_brems:
             brems = self.brems[ch, :]
 
             # Integrate over wavelengths
@@ -553,11 +581,12 @@ class Spectra:
             ax.set_xlabel('X1 [cm]')
             ax.set_ylabel('X2 [cm]')
             canvas.show()
-
+        else:
+            print('No brems spectra available')
 
 class NPA:
     """ NPA object that contains plot methods and parameters"""
-    def __init__(self,nml):
+    def __init__(self, nml):
         dir = nml["result_dir"]
         runid = nml["runid"]
         npa_file = os.path.join(dir,runid+'_npa.h5')
@@ -578,7 +607,7 @@ class NPA:
             self.npa_flux = npa['flux']
             self.nchan = npa['nchan']
         else:
-            print('No NPA found')
+            print('No NPA file found')
 
         if self._has_wght:
             print('Loading NPA weights')
@@ -587,14 +616,15 @@ class NPA:
             self.w_energy = wght['energy']
             self.w_flux = wght['flux']
         else:
-            print('No NPA weights found')
+            print('No NPA weights file found')
 
         if self._has_neut:
-
             neut = load_dict_from_hdf5(neut_file)
 
             self.dens = neut['fdens'].sum(0).sum(0) + neut['hdens'].sum(0).sum(0) + \
                         neut['tdens'].sum(0).sum(0) + neut['halodens'].sum(0).sum(0)
+        else:
+            print('No neutrals file found')
 
 #        if self._has_geo:
 #            geo = load_dict_from_hdf5(geo_file)  #,vars = ['x_grid','y_grid','xlos','ylos','xlens','ylens','chan_id'])
@@ -608,15 +638,15 @@ class NPA:
 #            self.ylens = geo['ylens'][w]
 
         if (self._has_npa or self._has_wght):
-            self.channels = collections.OrderedDict(('Channel ' + str(i + 1), i) for i in range(0, self.nchan))  # should it be nchan not 3???
+            self.channels_npa = collections.OrderedDict(('Channel ' + str(i + 1), i) for i in range(0, self.nchan))  # should it be nchan not 3???
 
-        self.chan = tk.StringVar(value = 'Channel 1')
+        self.chan_npa = tk.StringVar(value = 'Channel 1')
 
     def plot_neutral_birth(self, fig, canvas):
         if self._has_npa:
             fig.clf()
             ax = fig.add_subplot(111)
-            ch = self.channels[self.chan.get()]
+            ch = self.channels_npa[self.chan_npa.get()]
 
             if self._has_neut:
                 ax.plot(self.x_grid[0,:,:],self.y_grid[0,:,:],'k,')
@@ -632,22 +662,22 @@ class NPA:
         else:
             print('NPA: No file')
 
-    def plot_flux(self,fig,canvas):
+    def plot_flux(self, fig, canvas):
         if self._has_npa or self._has_wght:
             fig.clf()
             ax = fig.add_subplot(111)
-            ch = self.channels[self.chan.get()]
+            ch = self.channels_npa[self.chan_npa.get()]
             if self._has_npa:
                 ax.step(self.npa_energy,self.npa_flux[ch,:],label = 'MC Flux')
             if self._has_wght:
                 ax.plot(self.w_energy,self.w_flux[ch,:],label = 'WF Flux')
 
             ax.legend()
-            ax.set_title('Neutral Flux: '+self.chan.get())
+            ax.set_title('Neutral Flux: '+self.chan_npa.get())
             ax.set_ylabel('Flux')
             ax.set_xlabel('Energy [keV]')
             canvas.show()
-        else: print('NPA: No file')
+        else: print('No NPA file found')
 
 
 class Weights:
@@ -765,16 +795,16 @@ class Neutrals:
 
         ## Checkbox Variables
         self.use_mach_coords = tk.BooleanVar(value = False)
-        self.full_on = tk.BooleanVar(value = True)
-        self.half_on = tk.BooleanVar(value = True)
-        self.third_on = tk.BooleanVar(value = True)
-        self.halo_on = tk.BooleanVar(value = True)
+        self.full_on_neutrals = tk.BooleanVar(value = True)
+        self.half_on_neutrals = tk.BooleanVar(value = True)
+        self.third_on_neutrals = tk.BooleanVar(value = True)
+        self.halo_on_neutrals = tk.BooleanVar(value = True)
 
     def plot_neutrals(self,fig,canvas):
-        full_on = self.full_on.get()
-        half_on = self.half_on.get()
-        third_on = self.third_on.get()
-        halo_on = self.halo_on.get()
+        full_on = self.full_on_neutrals.get()
+        half_on = self.half_on_neutrals.get()
+        third_on = self.third_on_neutrals.get()
+        halo_on = self.halo_on_neutrals.get()
         torf = lambda T: 1 if T else 0
 
         if self._has_neut and (full_on or half_on or third_on or halo_on):
@@ -1144,26 +1174,26 @@ class Viewer:
 
         # Spectra Frame
         if self.spec._has_spectra:
-            ttk.Combobox(self.spectra_frame, textvariable = self.spec.chan,
-                         values = list(self.spec.channels.keys())).pack()
+            ttk.Combobox(self.spectra_frame, textvariable = self.spec.chan_spectra,
+                         values = list(self.spec.channels_spectra.keys())).pack()
 
-            ttk.Checkbutton(self.spectra_frame, text = 'Hide NBI', variable = self.spec.nbi_on,
+            ttk.Checkbutton(self.spectra_frame, text = 'Hide BES', variable = self.spec.bes_on_spectra,
                             onvalue = False, offvalue = True).pack()
 
-            ttk.Checkbutton(self.spectra_frame,text = 'Hide FIDA', variable = self.spec.fida_on,
+            ttk.Checkbutton(self.spectra_frame,text = 'Hide FIDA', variable = self.spec.fida_on_spectra,
                             onvalue = False, offvalue = True).pack()
 
-            ttk.Checkbutton(self.spectra_frame,text = 'Hide Bremsstrahlung', variable = self.spec.brems_on,\
+            ttk.Checkbutton(self.spectra_frame,text = 'Hide Bremsstrahlung', variable = self.spec.brems_on_spectra,\
             	             onvalue = False, offvalue = True).pack()
 
             ttk.Checkbutton(self.spectra_frame, text = 'Hide Legend', variable = self.spec.legend_on,\
             	             onvalue = False, offvalue = True).pack()
 
             ttk.Label(self.spectra_frame, text = 'Wavelength Min (nm)').pack()
-            ttk.Entry(self.spectra_frame, textvariable = self.spec.wl_min, state = tk.NORMAL, width = 10).pack()
+            ttk.Entry(self.spectra_frame, textvariable = self.spec.wl_min_spectra, state = tk.NORMAL, width = 10).pack()
 
             ttk.Label(self.spectra_frame, text = 'Wavelength Max (nm)').pack()
-            ttk.Entry(self.spectra_frame, textvariable = self.spec.wl_max, state = tk.NORMAL, width = 10).pack()
+            ttk.Entry(self.spectra_frame, textvariable = self.spec.wl_max_spectra, state = tk.NORMAL, width = 10).pack()
 
             ttk.Button(self.spectra_frame, text = 'Plot Spectra',\
             	        command = (lambda: self.spec.plot_spectra(self.fig, self.canvas))).pack(side = tk.TOP, expand = tk.Y, fill = tk.BOTH)
@@ -1175,7 +1205,7 @@ class Viewer:
 
         # NPA Frame
         if self.npa._has_npa:
-            ttk.Combobox(self.npa_frame, textvariable = self.npa.chan, values = tuple(self.npa.channels.keys())).pack()
+            ttk.Combobox(self.npa_frame, textvariable = self.npa.chan_npa, values = tuple(self.npa.channels_npa.keys())).pack()
 
             ttk.Button(self.npa_frame, text = 'Plot Neutral Birth',\
                        command = (lambda: self.npa.plot_neutral_birth(self.fig, self.canvas))).pack(side = tk.TOP, expand = tk.Y,fill = tk.BOTH)
@@ -1196,13 +1226,13 @@ class Viewer:
 
         ttk.Checkbutton(self.neutrals_frame,text = 'Use Machine Coordinates', variable = self.neut.use_mach_coords,\
                         onvalue = True,offvalue = False).pack()
-        ttk.Checkbutton(self.neutrals_frame,text = 'Hide Full', variable = self.neut.full_on,\
+        ttk.Checkbutton(self.neutrals_frame,text = 'Hide Full', variable = self.neut.full_on_neutrals,\
                         onvalue = False,offvalue = True).pack()
-        ttk.Checkbutton(self.neutrals_frame,text = 'Hide Half', variable = self.neut.half_on,\
+        ttk.Checkbutton(self.neutrals_frame,text = 'Hide Half', variable = self.neut.half_on_neutrals,\
                         onvalue = False,offvalue = True).pack()
-        ttk.Checkbutton(self.neutrals_frame,text = 'Hide Third', variable = self.neut.third_on,\
+        ttk.Checkbutton(self.neutrals_frame,text = 'Hide Third', variable = self.neut.third_on_neutrals,\
                         onvalue = False,offvalue = True).pack()
-        ttk.Checkbutton(self.neutrals_frame,text = 'Hide Halo', variable = self.neut.halo_on,\
+        ttk.Checkbutton(self.neutrals_frame,text = 'Hide Halo', variable = self.neut.halo_on_neutrals,\
                         onvalue = False,offvalue = True).pack()
 
         ttk.Button(self.neutrals_frame,text = 'Plot',\
