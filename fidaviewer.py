@@ -34,11 +34,10 @@ Todo
 * option to change volume element in neutral plotting for better fidelity in going from beam to mach coords
 * find out if histogram2d give left edges or right
 * rerun sample file sim setting all bools to true
-* implement multiple matching filenames
-* DONE - Make Spectra wl_min and wl_max changeable from gui
 * get more intellegent h5 reader to just grab what's needed
 * NPA needs work. I haven't used NPA data before - NGB
-* currently seems to load neutrals (more?) twice. check this and fix
+* currently seems to load neutrals twice. check this and fix
+
 * DONE - add another tab to gui "Imaging" w/ "Lens" drop down. Choose spectra and wavelength range to integrate and make contour
 * DONE - display msg like "No NPA file found" under each tab for clarity
 * DONE - use f90nml python package to parse the fortran namelist file and find what was and wasn't calculated
@@ -51,7 +50,8 @@ Todo
 * DONE - give window name of dir
 * DONE - how to sort channels in drop down box?
 * DONE - put NB name on plot (in geo file)
-
+* DONE - implement multiple matching filenames
+* DONE - Make Spectra wl_min and wl_max changeable from gui
 """
 
 def project_image(projection_dist, axes, aperture, data):
@@ -194,21 +194,16 @@ def intersect_line_plane(plane_pt1, plane_pt2, plane_pt3, line_pt, line_axis):
         tol = 1e-15
         vec1 = (X4 - X1)
         vec1 /= np.linalg.norm(vec1)
-#        print()
         if np.abs(np.dot(line_axis, plane_norm_vec)) < tol:
             # Line and plane are parallel
-#            print('Line and plane are parallel', np.dot(line_axis, plane_norm_vec))
             if np.abs(np.dot(vec1, plane_norm_vec)) < tol:
                 # Line is in the plane. Intersection is the line itself
-#                print('Line is in the plane.', np.abs(np.dot(vec1, plane_norm_vec)))
                 return [X4, line_axis]
             else:
                 # Line does not intersect plane
-#                print('Line does not intersect plane.' , np.abs(np.dot(vec1, plane_norm_vec)))
                 return None
         else:
             # Intersection is a point
-#            print('Intersection is a point')
             mat1 = np.ones((4, 4), dtype=float)
             mat1[1:4, 0] = X1
             mat1[1:4, 1] = X2
