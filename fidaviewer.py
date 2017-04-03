@@ -24,11 +24,8 @@ Todo
 ----
 * cannot edit wavelengths until after changing channel and replotting. Why? Fix this.
 * fix bad plots of neutrals in mach coords
-* make 'reset wavelength range' button for spectra and imaging frames
 * clean plots when all data turned off
 * with smart h5 reader, could load only info needed to make gui first, then only get data when called, and then save for later use
-* can cache pickle files to make much faster
-* add validation of wavelength min and max to not be beyond data
 * take units from files, don't hardcode. Low priority future-proofing
 * in taking mean of beam densities, should it only be for non-zero elements? As grid vol --> inf, density --> 0 otherwise
 * optimize: can more stuff be loaded only when used? can more stuff be saved and not recalculated (ie set/get)?
@@ -38,6 +35,9 @@ Todo
 * NPA needs work. I haven't used NPA data before - NGB
 * currently seems to load neutrals twice. check this and fix
 
+* DONE - add validation of wavelength min and max to not be beyond data. Don't do this
+* DONE - can cache pickle files to make much faster. Don't do this.
+* DONE - make 'reset wavelength range' button for spectra and imaging frames
 * DONE - find out if histogram2d gives left edges or right. A: right side. doing it right
 * DONE - separate concept of nbi_on and full_on from has_nb_spec and has_full_spec to separate spectra from imaging frames
 * DONE - add another tab to gui "Imaging" w/ "Lens" drop down. Choose spectra and wavelength range to integrate and make contour
@@ -312,9 +312,6 @@ class Spectra:
 
             # Availability booleans
             self.has_bes = ('full' in spec)
-#            self.has_half = ('half' in spec)
-#            self.has_third = ('third' in spec)
-#            self.has_halo = ('halo' in spec)
             self.has_fida = ('fida' in spec)
             self.has_brems = ('brems' in spec)
 
@@ -337,27 +334,6 @@ class Spectra:
             self.fida_on_imaging = tk.BooleanVar(value = self.has_fida)
             self.brems_on_imaging = tk.BooleanVar(value = self.has_brems)
             self.projection_dist = tk.StringVar(value = 100.)
-
-#            if self.brems_on_spectra.get() and ('brems' in spec):
-#                self.brems = spec['brems']
-#            else:
-#                self.brems = None
-#
-#            if self.fida_on_spectra.get() and ('fida' in spec):
-#                self.fida = spec['fida']
-#            else:
-#                self.fida = None
-#
-#            if self.bes_on_spectra.get() and ('full' in spec):
-#                self.full = spec['full']
-#                self.half = spec['half']
-#                self.third = spec['third']
-#                self.halo = spec['halo']
-#            else:
-#                self.full = None
-#                self.half = None
-#                self.third = None
-#                self.halo = None
 
             if self.has_brems:
                 self.brems = spec['brems']
@@ -435,13 +411,11 @@ class Spectra:
             w1 = (self.lam >= float(self.wl_min_spectra.get()))
             w2 = (self.lam <= float(self.wl_max_spectra.get()))
             w = np.logical_and(w1, w2)
-#            intens = np.sum(self.fida[:, w], axis = 1) * self.dlam
             intens = integrate.simps(self.fida[:, w], x = self.lam[w], axis = 1)
             ch = range(1, len(intens) + 1)
             fig.clf()
             ax = fig.add_subplot(111)
             ax.plot(ch, intens)
-#            ax.plot(ch, integrate.simps(self.fida[:, w], x = self.lam[w], axis = 1))   # Why isn't this the same???
             ax.set_title('FIDA Intensity vs. Channel')
             ax.set_ylabel('$Ph\ /\ (s\ sr\ m^2)$')
             ax.set_xlabel('Channel Number')
@@ -466,41 +440,6 @@ class Spectra:
         fig.clf()
         ax = fig.add_subplot(111)
         ax.axis('equal')
-
-#        if (self.full is not None):
-#            full = self.full[ch, :]
-#        else:
-#            full = 0.
-#            if full_on:
-#                print('No full spectra found')
-#
-#        if (self.half is not None):
-#            half = self.half[ch, :]
-#        else:
-#            half = 0.
-#            if half_on:
-#                print('No half spectra found')
-#
-#        if (self.third is not None):
-#            third = self.third[ch, :]
-#        else:
-#            third = 0.
-#            if third_on:
-#                print('No third spectra found')
-#
-#        if (self.halo is not None):
-#            halo = self.halo[ch, :]
-#        else:
-#            halo = 0.
-#            if halo_on:
-#                print('No halo spectra found')
-#
-#        if (self.fida is not None):
-#            fida = self.fida[ch, :]
-#        else:
-#            fida = 0.
-#            if fida_on:
-#                print('No fida spectra found')
 
         if self.has_bes:
             full = self.full[ch, :]
@@ -530,7 +469,6 @@ class Spectra:
             w = (self.lam >= float(self.wl_min_imaging.get())) & (self.lam <= float(self.wl_max_imaging.get()))
             spec = integrate.simps(spec[:, w], x = self.lam[w], axis = 1)  # (this_nchan)
 
-#            projection_dist = 100.                      # arbitary for now, make tk variable
             lens_axis = self.lens_axis[ch, :]           # (this_nchan, 3), all LOS axes for this lens
             lens_loc = self.lens_loc[ch[0], :]          # (3), same for all in ch
 
@@ -545,12 +483,7 @@ class Spectra:
             ax.set_ylabel('X2 [cm]')
             canvas.show()
         else:
-#            c = ax.contourf([[0,0],[0,0]])
-#            cb = fig.colorbar(c)
-#            ax.set_title('No data selected')
-#            canvas.delete("all")
-            pass
-            # How to clear plot here?
+            print('No spectra selected to plot')
 
     def plot_brems_image(self, fig, canvas):
         """Plot 2D contour of line-integrated brems
@@ -569,7 +502,6 @@ class Spectra:
             w = (self.lam >= float(self.wl_min_imaging.get())) & (self.lam <= float(self.wl_max_imaging.get()))
             spec = integrate.simps(brems[:, w], x = self.lam[w], axis = 1)  # (this_nchan)
 
-#            projection_dist = 100.                      # arbitary for now, make tk variable
             lens_axis = self.lens_axis[ch, :]           # (this_nchan, 3), all LOS axes for this lens
             lens_loc = self.lens_loc[ch[0], :]          # (3), same for all in ch (for TAE data)
 
@@ -636,17 +568,6 @@ class NPA:
                         neut['tdens'].sum(0).sum(0) + neut['halodens'].sum(0).sum(0)
         else:
             print('No neutrals file found')
-
-#        if self._has_geo:
-#            geo = load_dict_from_hdf5(geo_file)  #,vars = ['x_grid','y_grid','xlos','ylos','xlens','ylens','chan_id'])
-#            self.x_grid = geo['x_grid']
-#            self.y_grid = geo['y_grid']
-#            chan_id = geo['chan_id']
-#            w = chan_id == 1
-#            self.xlos = geo['xlos'][w]
-#            self.ylos = geo['ylos'][w]
-#            self.xlens = geo['xlens'][w]
-#            self.ylens = geo['ylens'][w]
 
         if (self._has_npa or self._has_wght):
             self.channels_npa = collections.OrderedDict(('Channel ' + str(i + 1), i) for i in range(0, self.nchan))  # should it be nchan not 3???
