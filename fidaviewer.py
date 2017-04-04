@@ -22,6 +22,7 @@ import scipy.interpolate as interpolate
 """
 Todo
 ----
+* add beam centerline to imaging contour plots
 * cannot edit wavelengths until after changing channel and replotting. Why? Fix this.
 * fix bad plots of neutrals in mach coords
 * clean plots when all data turned off
@@ -358,6 +359,9 @@ class Spectra:
 
                 self.lenses = collections.OrderedDict(('Lens ' + str(i + 1), i) for i in range(nlenses))
                 self.lens = tk.StringVar(value = 'Lens 1')
+
+#                for i in range(nlenses):
+#                    print('Lens {}: {}'.format(i + 1, self.lens_loc[self.uniq_lens_indeces[i][0], :]))
             else:
                 print('No geometry file found')
         else:
@@ -731,8 +735,9 @@ class Neutrals:
         self.half_on_neutrals = tk.BooleanVar(value = True)
         self.third_on_neutrals = tk.BooleanVar(value = True)
         self.halo_on_neutrals = tk.BooleanVar(value = True)
+        self.transpose = tk.BooleanVar(value = False)
 
-    def plot_neutrals(self,fig,canvas):
+    def plot_neutrals(self, fig, canvas):
         full_on = self.full_on_neutrals.get()
         half_on = self.half_on_neutrals.get()
         third_on = self.third_on_neutrals.get()
@@ -914,7 +919,7 @@ class Neutrals:
                         x = xedges[0:-1] + dx / 2.
                         y = yedges[0:-1] + dy / 2.
 
-                        x, y = np.meshgrid(x, y, indexing='ij')
+#                        x, y = np.meshgrid(x, y, indexing='ij')
 
                         hdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.hdens.flatten())[0]
                         tdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.tdens.flatten())[0]
@@ -926,7 +931,25 @@ class Neutrals:
                         tdens = tdens / self.nz
                         halodens = halodens / self.nz
                     else:
-                        # Use beam coords or beam and machine coords are the same
+                        # Use data as is for beam coords or when coord systems are the same
+                        x = self.x_grid_beam[:, 0, 0]
+                        y = self.y_grid_beam[0, :, 0]
+                        fdens = self.fdens.mean(2)
+                        hdens = self.hdens.mean(2)
+                        tdens = self.tdens.mean(2)
+                        halodens = self.halodens.mean(2)
+
+                    if self.transpose.get():
+                        if self.use_mach_coords.get():
+                            ax.set_xlabel('Y [cm]')
+                            ax.set_ylabel('X [cm]')
+                        elif self.beam_mach_same:
+                            ax.set_xlabel('$Y = Y_{beam}$ [cm]')
+                            ax.set_ylabel('$X = X_{beam}$ [cm]')
+                        else:
+                            ax.set_xlabel('$Y_{beam}$ [cm]')
+                            ax.set_ylabel('$X_{beam}$ [cm]')
+                    else:
                         if self.use_mach_coords.get():
                             ax.set_xlabel('X [cm]')
                             ax.set_ylabel('Y [cm]')
@@ -937,21 +960,16 @@ class Neutrals:
                             ax.set_xlabel('$X_{beam}$ [cm]')
                             ax.set_ylabel('$Y_{beam}$ [cm]')
 
-                        # Use data as is for beam coords or when coord systems are the same
-                        x = self.x_grid_beam[:, :, 0]
-                        y = self.y_grid_beam[:, :, 0]
-                        fdens = self.fdens.mean(2)
-                        hdens = self.hdens.mean(2)
-                        tdens = self.tdens.mean(2)
-                        halodens = self.halodens.mean(2)
-
                     dens = fdens * torf(full_on) + hdens * torf(half_on) + tdens * torf(third_on) + halodens * torf(halo_on)
 
                     ax.axis('equal')
-                    c = ax.contourf(x, y, dens, 50)
+                    if self.transpose.get():
+                        c = ax.contourf(y, x, dens, 50)
+                    else:
+                        c = ax.contourf(x, y, dens.T, 50)
                     cb = fig.colorbar(c)
                     cb.ax.set_ylabel('[$cm^{-3}$]')
-                    ax.set_title('Mean Neutral Density. NB {}'.format(self.beam_name))
+                    ax.set_title('Mean Neutral Density. {}'.format(self.beam_name))
                     canvas.show()
 
                 if pt == 'XZ':
@@ -972,7 +990,7 @@ class Neutrals:
                         x = xedges[0:-1] + dx / 2.
                         y = yedges[0:-1] + dy / 2.
 
-                        x, y = np.meshgrid(x, y, indexing='ij')
+#                        x, y = np.meshgrid(x, y, indexing='ij')
 
                         hdens = np.histogram2d(self.x_grid.flatten(), self.z_grid.flatten(), bins = (xedges, yedges), weights=self.hdens.flatten())[0]
                         tdens = np.histogram2d(self.x_grid.flatten(), self.z_grid.flatten(), bins = (xedges, yedges), weights=self.tdens.flatten())[0]
@@ -985,6 +1003,24 @@ class Neutrals:
                         halodens = halodens / self.ny
                     else:
                         # Use beam coords or beam and machine coords are the same
+                        x = self.x_grid_beam[:, 0, 0]
+                        y = self.z_grid_beam[0, 0, :]
+                        fdens = self.fdens.mean(1)
+                        hdens = self.hdens.mean(1)
+                        tdens = self.tdens.mean(1)
+                        halodens = self.halodens.mean(1)
+
+                    if self.transpose.get():
+                        if self.use_mach_coords.get():
+                            ax.set_xlabel('Z [cm]')
+                            ax.set_ylabel('X [cm]')
+                        elif self.beam_mach_same:
+                            ax.set_xlabel('$Z = Z_{beam}$ [cm]')
+                            ax.set_ylabel('$X = X_{beam}$ [cm]')
+                        else:
+                            ax.set_xlabel('$Z_{beam}$ [cm]')
+                            ax.set_ylabel('$X_{beam}$ [cm]')
+                    else:
                         if self.use_mach_coords.get():
                             ax.set_xlabel('X [cm]')
                             ax.set_ylabel('Z [cm]')
@@ -995,18 +1031,13 @@ class Neutrals:
                             ax.set_xlabel('$X_{beam}$ [cm]')
                             ax.set_ylabel('$Z_{beam}$ [cm]')
 
-                        # Use data as is for beam coords or when coord systems are the same
-                        x = self.x_grid_beam[:, 0, :]
-                        y = self.z_grid_beam[:, 0, :]
-                        fdens = self.fdens.mean(1)
-                        hdens = self.hdens.mean(1)
-                        tdens = self.tdens.mean(1)
-                        halodens = self.halodens.mean(1)
-
                     dens = fdens * torf(full_on) + hdens * torf(half_on) + tdens * torf(third_on) + halodens * torf(halo_on)
 
                     ax.axis('equal')
-                    c = ax.contourf(x,y,dens,50)
+                    if self.transpose.get():
+                        c = ax.contourf(y, x, dens, 50)
+                    else:
+                        c = ax.contourf(x, y, dens.T, 50)
                     cb = fig.colorbar(c)
                     cb.ax.set_ylabel('[$cm^{-3}$]')
                     ax.set_title('Mean Neutral Density. NB {}'.format(self.beam_name))
@@ -1030,7 +1061,7 @@ class Neutrals:
                         x = xedges[0:-1] + dx / 2.
                         y = yedges[0:-1] + dy / 2.
 
-                        x, y = np.meshgrid(x, y, indexing='ij')
+#                        x, y = np.meshgrid(x, y, indexing='ij')
 
                         hdens = np.histogram2d(self.y_grid.flatten(), self.z_grid.flatten(), bins = (xedges, yedges), weights=self.hdens.flatten())[0]
                         tdens = np.histogram2d(self.y_grid.flatten(), self.z_grid.flatten(), bins = (xedges, yedges), weights=self.tdens.flatten())[0]
@@ -1043,6 +1074,24 @@ class Neutrals:
                         halodens = halodens / self.nx
                     else:
                         # Use beam coords or beam and machine coords are the same
+                        x = self.y_grid_beam[0, :, 0]
+                        y = self.z_grid_beam[0, 0, :]
+                        fdens = self.fdens.mean(0)
+                        hdens = self.hdens.mean(0)
+                        tdens = self.tdens.mean(0)
+                        halodens = self.halodens.mean(0)
+
+                    if self.transpose.get():
+                        if self.use_mach_coords.get():
+                            ax.set_xlabel('Z [cm]')
+                            ax.set_ylabel('Y [cm]')
+                        elif self.beam_mach_same:
+                            ax.set_xlabel('$Z = Z_{beam}$ [cm]')
+                            ax.set_ylabel('$Y = Y_{beam}$ [cm]')
+                        else:
+                            ax.set_xlabel('$Z_{beam}$ [cm]')
+                            ax.set_ylabel('$Y_{beam}$ [cm]')
+                    else:
                         if self.use_mach_coords.get():
                             ax.set_xlabel('Y [cm]')
                             ax.set_ylabel('Z [cm]')
@@ -1053,18 +1102,13 @@ class Neutrals:
                             ax.set_xlabel('$Y_{beam}$ [cm]')
                             ax.set_ylabel('$Z_{beam}$ [cm]')
 
-                        # Use data as is for beam coords or when coord systems are the same
-                        x = self.y_grid_beam[0, :, :]
-                        y = self.z_grid_beam[0, :, :]
-                        fdens = self.fdens.mean(0)
-                        hdens = self.hdens.mean(0)
-                        tdens = self.tdens.mean(0)
-                        halodens = self.halodens.mean(0)
-
                     dens = fdens * torf(full_on) + hdens * torf(half_on) + tdens * torf(third_on) + halodens * torf(halo_on)
 
                     ax.axis('equal')
-                    c = ax.contourf(x, y, dens, 50)
+                    if self.transpose.get():
+                        c = ax.contourf(y, x, dens, 50)
+                    else:
+                        c = ax.contourf(x, y, dens.T, 50)
                     cb = fig.colorbar(c)
                     cb.ax.set_ylabel('[$cm^{-3}$]')
                     ax.set_title('Mean Neutral Density. NB {}'.format(self.beam_name))
@@ -1162,20 +1206,23 @@ class Viewer:
         ttk.Radiobutton(self.neutrals_frame, text = 'Contour YZ', variable = self.neut.plot_type, value = 'YZ').pack()
 
 
-        ttk.Checkbutton(self.neutrals_frame,text = 'Use Machine Coordinates', variable = self.neut.use_mach_coords,\
-                        onvalue = True,offvalue = False).pack()
+        ttk.Checkbutton(self.neutrals_frame, text = 'Use Machine Coordinates', variable = self.neut.use_mach_coords,\
+                        onvalue = True, offvalue = False).pack()
 
-        ttk.Checkbutton(self.neutrals_frame,text = 'Hide Full', variable = self.neut.full_on_neutrals,\
-                        onvalue = False,offvalue = True).pack()
+        ttk.Checkbutton(self.neutrals_frame, text = 'Hide Full', variable = self.neut.full_on_neutrals,\
+                        onvalue = False, offvalue = True).pack()
 
-        ttk.Checkbutton(self.neutrals_frame,text = 'Hide Half', variable = self.neut.half_on_neutrals,\
-                        onvalue = False,offvalue = True).pack()
+        ttk.Checkbutton(self.neutrals_frame, text = 'Hide Half', variable = self.neut.half_on_neutrals,\
+                        onvalue = False, offvalue = True).pack()
 
-        ttk.Checkbutton(self.neutrals_frame,text = 'Hide Third', variable = self.neut.third_on_neutrals,\
-                        onvalue = False,offvalue = True).pack()
+        ttk.Checkbutton(self.neutrals_frame, text = 'Hide Third', variable = self.neut.third_on_neutrals,\
+                        onvalue = False, offvalue = True).pack()
 
-        ttk.Checkbutton(self.neutrals_frame,text = 'Hide Halo', variable = self.neut.halo_on_neutrals,\
-                        onvalue = False,offvalue = True).pack()
+        ttk.Checkbutton(self.neutrals_frame, text = 'Hide Halo', variable = self.neut.halo_on_neutrals,\
+                        onvalue = False, offvalue = True).pack()
+
+        ttk.Checkbutton(self.neutrals_frame, text = 'Transpose', variable = self.neut.transpose,\
+                        onvalue = True, offvalue = False).pack()
 
         ttk.Button(self.neutrals_frame, text = 'Plot',\
                    command = (lambda: self.neut.plot_neutrals(self.fig, self.canvas))).pack(expand = tk.Y, fill = tk.BOTH)
