@@ -22,6 +22,7 @@ import scipy.interpolate as interpolate
 """
 Todo
 ----
+* consider showing images vs angles instead of distance (ie independent of projection_dist)
 * add beam centerline to imaging contour plots
 * cannot edit wavelengths until after changing channel and replotting. Why? Fix this.
 * fix bad plots of neutrals in mach coords
@@ -57,7 +58,7 @@ Todo
 * DONE - Make Spectra wl_min and wl_max changeable from gui
 """
 
-def project_image(projection_dist, axes, aperture, data):
+def project_image(projection_dist, axes, aperture, data, beam_src, beam_axis):
     """Given several lines of sight and an intensity per LOS, project an image on a plane perpendicular
     to the average LOS axis.
 
@@ -146,7 +147,17 @@ def project_image(projection_dist, axes, aperture, data):
     x1_grid, x2_grid = np.meshgrid(x1, x2, indexing='ij')
     grid_data = interpolate.griddata(target_rotated[:, 1:3], data, (x1_grid, x2_grid), fill_value = 0.)
 
-    return x1_grid, x2_grid, grid_data, valid_ic
+    # Find two pts on beam centerline in mach coords
+    beam_pt1 = beam_src
+    beam_pt2 = beam_pt1 + beam_axis * 10.
+
+    # Rotate beam to relative coords
+    beam_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, np.array([beam_pt1, beam_pt2]).T, origin=plane_pt1)  # (3, 2)
+    beam_rotated_pt1 = beam_rotated[1:3, 0]
+    beam_rotated_pt2 = beam_rotated[1:3, 1]
+
+#    return x1_grid, x2_grid, grid_data, valid_ic
+    return x1, x2, grid_data, beam_rotated_pt1, beam_rotated_pt2 - beam_rotated_pt1
 
 def intersect_line_plane(plane_pt1, plane_pt2, plane_pt3, line_pt, line_axis):
         '''Calculate the intersection location between line and plane
@@ -354,6 +365,8 @@ class Spectra:
 
                 self.lens_loc = geo['spec']['lens']    # (nchan, 3)
                 self.lens_axis = geo['spec']['axis']   # (nchan, 3)
+                self.beam_src = geo['nbi']['src']
+                self.beam_axis = geo['nbi']['axis']
 
                 self.uniq_lens_indeces, nlenses = find_lenses(self.nchan, self.lens_loc)
 
@@ -476,15 +489,30 @@ class Spectra:
             lens_axis = self.lens_axis[ch, :]           # (this_nchan, 3), all LOS axes for this lens
             lens_loc = self.lens_loc[ch[0], :]          # (3), same for all in ch
 
-            yp_grid, zp_grid, grid_spec, valid_ic = project_image(float(self.projection_dist.get()), lens_axis, lens_loc, spec)
+#            yp_grid, zp_grid, grid_spec, valid_ic = project_image(float(self.projection_dist.get()), lens_axis, lens_loc, spec)
+            x1, x2, grid_spec, beam_pt, beam_axis = project_image(float(self.projection_dist.get()), lens_axis,
+                                                                  lens_loc, spec, self.beam_src, self.beam_axis)
+
+            # Find where beam hits edges of target plane (Assumes crosses left and right, not general solution)
+            t1 = (np.min(x1) - beam_pt[0]) / beam_axis[0]
+            t2 = (np.max(x1) - beam_pt[0]) / beam_axis[0]
+            beam_pt1 = beam_pt + beam_axis * t1
+            beam_pt2 = beam_pt + beam_axis * t2
 
             # Plot contour
-            c = ax.contourf(yp_grid, zp_grid, grid_spec, 50)
+#            c = ax.contourf(yp_grid, zp_grid, grid_spec, 50)
+            c = ax.contourf(x1, x2, grid_spec.T, 50)
             cb = fig.colorbar(c)
             cb.ax.set_ylabel('[$Ph\ /\ (s\ sr\ m^2)$]')
             ax.set_title('Intensity\nLens at [{:4.0f},{:4.0f},{:4.0f}]'.format(lens_loc[0], lens_loc[1], lens_loc[2]))
             ax.set_xlabel('X1 [cm]')
             ax.set_ylabel('X2 [cm]')
+
+            # Overplot beam centerline
+            ax.plot([beam_pt1[0], beam_pt2[0]], [beam_pt1[1], beam_pt2[1]], color = 'magenta')
+#            arr = plt.Arrow(beam_pt1[0], beam_pt1[1], 0.5, 0.5)
+#            ax.add_patch(arr)
+#            ax.arrow(beam_pt1[0], beam_pt1[1], 0.5, 0.5, head_width=0.05, head_length=0.1, fc='k', ec='k')
             canvas.show()
         else:
             print('No spectra selected to plot')
@@ -509,15 +537,27 @@ class Spectra:
             lens_axis = self.lens_axis[ch, :]           # (this_nchan, 3), all LOS axes for this lens
             lens_loc = self.lens_loc[ch[0], :]          # (3), same for all in ch (for TAE data)
 
-            yp_grid, zp_grid, grid_spec, valid_ic = project_image(float(self.projection_dist.get()), lens_axis, lens_loc, spec)
+#            yp_grid, zp_grid, grid_spec, valid_ic = project_image(float(self.projection_dist.get()), lens_axis, lens_loc, spec)
+            x1, x2, grid_spec, beam_pt, beam_axis = project_image(float(self.projection_dist.get()), lens_axis,
+                                                                  lens_loc, spec, self.beam_src, self.beam_axis)
+
+            # Find where beam hits edges of target plane (Assumes crosses left and right, not general solution)
+            t1 = (np.min(x1) - beam_pt[0]) / beam_axis[0]
+            t2 = (np.max(x1) - beam_pt[0]) / beam_axis[0]
+            beam_pt1 = beam_pt + beam_axis * t1
+            beam_pt2 = beam_pt + beam_axis * t2
 
              # Plot contour
-            c = ax.contourf(yp_grid, zp_grid, grid_spec, 50)
+#            c = ax.contourf(yp_grid, zp_grid, grid_spec, 50)
+            c = ax.contourf(x1, x2, grid_spec.T, 50)
             cb = fig.colorbar(c)
             cb.ax.set_ylabel('[$Ph\ /\ (s\ sr\ m^2)$]')
             ax.set_title('Intensity\nLens at [{:4.0f},{:4.0f},{:4.0f}]'.format(lens_loc[0], lens_loc[1], lens_loc[2]))
             ax.set_xlabel('X1 [cm]')
             ax.set_ylabel('X2 [cm]')
+
+            # Overplot beam centerline
+            ax.plot([beam_pt1[0], beam_pt2[0]], [beam_pt1[1], beam_pt2[1]], color = 'magenta')
             canvas.show()
         else:
             print('No brems spectra available')
