@@ -256,7 +256,6 @@ def load_dict_from_hdf5(h5_filepath):
     with h5py.File(h5_filepath, 'r') as h5_obj:
         return recursively_load_dict_contents_from_group(h5_obj, '/')
 
-
 def find_lenses(nchan, lens_loc):
     """Find locations for unique lenses in fidasim run
 
@@ -270,35 +269,24 @@ def find_lenses(nchan, lens_loc):
 
     Returns
     -------
-    uniq_lens_indeces : list
+    uniq_lens_indices : list
         Indeces to locate spectra for each unique lens location
 
     nlenses : int
         Number of unique len locations
 
-    Todo
-    ----
-    * Can't seem to do w/ np.isclose. Make this work
     """
-    uniq_lens_indeces = list()
-    master_ind = np.arange(nchan)
-    nlos = 0
-    ic = 0
-    iter_count = -1
-    while True:
-        iter_count += 1
-        this_lens_loc = lens_loc[ic, :]
-        w = (lens_loc[:, 0] == this_lens_loc[0]) & (lens_loc[:, 1] == this_lens_loc[1]) & (lens_loc[:, 2] == this_lens_loc[2])
-        uniq_lens_indeces.append(master_ind[w])
-        nlos += uniq_lens_indeces[-1].size
-        if (nlos >= nchan) or (iter_count >= nchan):
-            break
-        else:
-            # next index not in w that hasn't been covered yet (ie, still need to examine)
-            ic = np.min(np.setdiff1d(master_ind, np.array(uniq_lens_indeces).flatten()))
-    nlenses = len(uniq_lens_indeces)
+    nchan = lens_loc.shape[0]
+    lens_list = [tuple(lens_loc[i,:]) for i in range(nchan)]
+    lens_set = set(lens_list)
 
-    return uniq_lens_indeces, nlenses
+    uniq_lens_indices = []
+    for i,lens in enumerate(lens_list):
+        if lens in lens_set:
+            uniq_lens_indices.append(i)
+            lens_set.remove(lens)
+
+    return uniq_lens_indices, len(uniq_lens_indices)
 
 
 class Spectra:
@@ -307,7 +295,7 @@ class Spectra:
         dir = nml["result_dir"]
         runid = nml["runid"]
         spec_file = os.path.join(dir, runid+'_spectra.h5')
-        geo_file = os.path.join(dir, runid+'_geometry.h5')
+        geo_file = nml["geometry_file"]
         self._has_spectra = os.path.isfile(spec_file)
         self._has_geo = os.path.isfile(geo_file)
 
@@ -579,7 +567,7 @@ class NPA:
         npa_file = os.path.join(dir,runid+'_npa.h5')
         wght_file = os.path.join(dir,runid+'_npa_weights.h5')
         neut_file = os.path.join(dir,runid+'_neutrals.h5')
-        geo_file = os.path.join(dir,runid+'_geometry.h5')
+        geo_file = nml["geometry_file"]
 
         self._has_npa = os.path.isfile(npa_file)
         self._has_wght = os.path.isfile(wght_file)
@@ -729,7 +717,7 @@ class Neutrals:
         dir = nml["result_dir"]
         runid = nml["runid"]
         neut_file = os.path.join(dir,runid+'_neutrals.h5')
-        geo_file = os.path.join(dir,runid+'_geometry.h5')
+        geo_file = nml["geometry_file"]
 
         self._has_neut = os.path.isfile(neut_file)
         self._has_geo = os.path.isfile(geo_file)
@@ -1336,10 +1324,13 @@ class Viewer:
         if not os.path.isdir(nml['result_dir']):
             nml['result_dir'] = os.path.dirname(filename)
 
+        if not os.path.isfile(nml['geometry_file']):
+            nml['geometry_file'] = os.path.join(nml['result_dir'],os.path.basename(nml['geometry_file']))
+
         return nml
 
     def load_namelist(self):
-        self.namelistfile = askopenfilename(filetypes=[('Namelist Files','*.dat')])
+        self.namelistfile = askopenfilename(initialdir=os.path.expanduser('~'),filetypes=[('Namelist Files','*.dat')])
         self.nml = self.read_nml(self.namelistfile)
         self.spec = Spectra(self.nml)
         self.npa = NPA(self.nml)
