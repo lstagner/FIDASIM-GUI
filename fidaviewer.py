@@ -277,14 +277,15 @@ def find_lenses(nchan, lens_loc):
 
     """
     nchan = lens_loc.shape[0]
+    chan = np.arange(nchan)
     lens_list = [tuple(lens_loc[i,:]) for i in range(nchan)]
     lens_set = set(lens_list)
 
     uniq_lens_indices = []
-    for i,lens in enumerate(lens_list):
-        if lens in lens_set:
-            uniq_lens_indices.append(i)
-            lens_set.remove(lens)
+    for lens in lens_set:
+        wl = np.array([l == lens for l in lens_list])
+        lens_ind = chan[wl]
+        uniq_lens_indices.append(lens_ind)
 
     return uniq_lens_indices, len(uniq_lens_indices)
 
@@ -1330,7 +1331,7 @@ class Viewer:
         return nml
 
     def load_namelist(self):
-        self.namelistfile = askopenfilename(initialdir=os.path.expanduser('~'),filetypes=[('Namelist Files','*.dat')])
+        self.namelistfile = askopenfilename(filetypes=[('Namelist Files','*.dat')])
         self.nml = self.read_nml(self.namelistfile)
         self.spec = Spectra(self.nml)
         self.npa = NPA(self.nml)
