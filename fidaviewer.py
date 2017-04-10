@@ -58,42 +58,152 @@ Todo
 * DONE - Make Spectra wl_min and wl_max changeable from gui
 """
 
-def project_image(projection_dist, axes, aperture, data, beam_src, beam_axis):
+#def project_image(projection_dist, axes, aperture, data, beam_src, beam_axis):
+#    """Given several lines of sight and an intensity per LOS, project an image on a plane perpendicular
+#    to the average LOS axis.
+#
+#    Parameters
+#    ----------
+#    projection_dist : float
+#        Distance along average LOS axis for projection plane
+#
+#    axes : array (nchan, 3)
+#        Normalized axes vectors defining LOS
+#
+#    aperture : array (3)
+#        Common location for all LOS (aperature or lens)
+#
+#    data : array (nchan)
+#        Data to be projected
+#
+#    Returns
+#    -------
+#    x1_grid : float array (100, 101)
+#        Relative coordinates for grid_data (perpendicular to average LOS axis)
+#
+#    x2_grid : float array (100, 101)
+#        Second set of relative coordinates for grid_data (perpendicular to average LOS axis)
+#
+#    grid_data : float array (100, 101)
+#        data interpolated onto a uniform grid on a plane perpendicular to the average LOS axis and
+#        projection_dist from the aperature
+#
+#    valid_ic : int array (<=nchan)
+#        Indeces (relative to an (nchan) array) indicating which LOS made a valid projection
+#
+#    Todo
+#    ----
+#
+#    """
+#    avg_los_axis = axes.mean(0)           # (3)
+#    nchan = axes.shape[0]
+#
+#    # Find point projection_dist along lens axis (ie point on plane pierced by lens axis line)
+#    t = np.sqrt(projection_dist ** 2 / np.sum(avg_los_axis ** 2))
+#    plane_pt1 = aperture + avg_los_axis * t
+#
+#    # Find any vector perp to avg_los_axis (by crossing w/ any non-colinear vector) to define the plane
+#    any_vec = np.array([avg_los_axis[0] + 5., avg_los_axis[1], avg_los_axis[2]])   # 5. is arbitrary
+#    plane_vec1 = np.cross(avg_los_axis, any_vec)
+#
+#    # Find second plane vector
+#    plane_vec2 = np.cross(avg_los_axis, plane_vec1)
+#
+#    # Find two more points to define plane
+#    plane_pt2 = plane_pt1 + plane_vec1 * 5.         # 5. is arbitrary
+#    plane_pt3 = plane_pt1 + plane_vec2 * 5.         # 5. is arbitrary
+#
+#    # Step thru each LOS and find intersection with plane (call them 'target' points)
+#    target = list()         # locations where LOS hit projection plane
+#    valid_ic = list()       # indeces (relative to (nchan) array) where LOS makes valid projection
+#    for ic in range(nchan):
+#        res = intersect_line_plane(plane_pt1, plane_pt2, plane_pt3, aperture, axes[ic, :])
+#
+#        if res is None:
+#            print('Warning: LOS {}, does not intersect projection plane. Ignoring'.format(ic))
+#        elif len(res) == 2:
+#            print('Warning: LOS {} lies in projection plane. Ignoring'.format(ic))
+#        elif len(res) == 3:
+#            # Intersection is a point
+#            target.append(res)
+#            valid_ic.append(ic)
+#
+#    target = np.array(target)       # (nvalid, 3), all on plane perp to avg_los_axis
+#
+#    # Remove channels that wont be imaged
+#    data = data[valid_ic]   # (nvalid)
+#
+#    # Rotate target locations into coord sys aligned with avg_los_axis
+#    dis = np.sqrt(np.sum((aperture - plane_pt1) ** 2.0))
+#    beta = np.arcsin((aperture[2] - plane_pt1[2]) / dis)
+#    alpha = np.arctan2((plane_pt1[1] - aperture[1]), (plane_pt1[0] - aperture[0]))
+#    gamma = 0.
+#    target_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, target.T, origin=plane_pt1).T  # (nvalid, 3)
+#
+#    # Interpolate data onto uniform grid along target plane
+#    n1d = 100    # no. of grid points in each direction
+#    x1 = np.linspace(target_rotated[:, 1].min(), target_rotated[:, 1].max(), num = n1d)
+#    x2 = np.linspace(target_rotated[:, 2].min(), target_rotated[:, 2].max(), num = n1d + 1)
+#    x1_grid, x2_grid = np.meshgrid(x1, x2, indexing='ij')
+#    grid_data = interpolate.griddata(target_rotated[:, 1:3], data, (x1_grid, x2_grid), fill_value = 0.)
+#
+#    # Find two pts on beam centerline in mach coords
+#    beam_pt1 = beam_src
+#    beam_pt2 = beam_pt1 + beam_axis * 10.
+#
+#    # Rotate beam to relative coords
+#    beam_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, np.array([beam_pt1, beam_pt2]).T, origin=plane_pt1)  # (3, 2)
+#    beam_rotated_pt1 = beam_rotated[1:3, 0]
+#    beam_rotated_pt2 = beam_rotated[1:3, 1]
+#
+##    return x1_grid, x2_grid, grid_data, valid_ic
+#    return x1, x2, grid_data, beam_rotated_pt1, beam_rotated_pt2 - beam_rotated_pt1
+
+
+def project_image(axes, aperture, data, beam_pt, beam_axis,
+                  angles = True,
+                  projection_dist = 100.):
     """Given several lines of sight and an intensity per LOS, project an image on a plane perpendicular
     to the average LOS axis.
 
     Parameters
     ----------
-    projection_dist : float
-        Distance along average LOS axis for projection plane
-
     axes : array (nchan, 3)
         Normalized axes vectors defining LOS
 
     aperture : array (3)
-        Common location for all LOS (aperature or lens)
+        Common location for all LOS (aperture or lens)
 
     data : array (nchan)
         Data to be projected
 
+    beam_pt : array (3)
+        A point on the beam centerline
+
+    beam_axis : array (3)
+        Vector along beam centerline
+
+    angles : bool, optional
+        True - returns image projection plane defined as degrees away from average LOS
+        False - returns image projection plane using spatial input units relative to average LOS
+
+    projection_dist : float, optional
+        Distance along average LOS axis for projection plane
+
     Returns
     -------
     x1_grid : float array (100, 101)
-        Relative coordinates for grid_data (perpendicular to average LOS axis)
+        Relative coordinates for grid_data (angle (deg) perpendicular to average LOS axis)
 
     x2_grid : float array (100, 101)
-        Second set of relative coordinates for grid_data (perpendicular to average LOS axis)
+        Second set of relative coordinates for grid_data (angle (deg) perpendicular to average LOS axis)
 
     grid_data : float array (100, 101)
-        data interpolated onto a uniform grid on a plane perpendicular to the average LOS axis and
-        projection_dist from the aperature
-
-    valid_ic : int array (<=nchan)
-        Indeces (relative to an (nchan) array) indicating which LOS made a valid projection
+        data interpolated onto a uniform grid on a plane perpendicular to the average LOS axis
 
     Todo
     ----
-    * Generalize with points (nchan, 3) distinct for each LOS
+
     """
     avg_los_axis = axes.mean(0)           # (3)
     nchan = axes.shape[0]
@@ -106,22 +216,26 @@ def project_image(projection_dist, axes, aperture, data, beam_src, beam_axis):
     any_vec = np.array([avg_los_axis[0] + 5., avg_los_axis[1], avg_los_axis[2]])   # 5. is arbitrary
     plane_vec1 = np.cross(avg_los_axis, any_vec)
 
-    # Find second plane vector
+    # Find second plane vector perp to first
     plane_vec2 = np.cross(avg_los_axis, plane_vec1)
 
     # Find two more points to define plane
-    plane_pt2 = plane_pt1 + plane_vec1 * 5.         # 5. is arbitrary
-    plane_pt3 = plane_pt1 + plane_vec2 * 5.         # 5. is arbitrary
+    t = 5.                                          # 5. is arbitrary
+    plane_pt2 = plane_pt1 + plane_vec1 * t
+    plane_pt3 = plane_pt1 + plane_vec2 * t
 
     # Step thru each LOS and find intersection with plane (call them 'target' points)
     target = list()         # locations where LOS hit projection plane
     valid_ic = list()       # indeces (relative to (nchan) array) where LOS makes valid projection
     for ic in range(nchan):
+        # Find where this LOS intersects projection plane
         res = intersect_line_plane(plane_pt1, plane_pt2, plane_pt3, aperture, axes[ic, :])
 
         if res is None:
+            # No intersection
             print('Warning: LOS {}, does not intersect projection plane. Ignoring'.format(ic))
         elif len(res) == 2:
+            # Intersection is the LOS itself
             print('Warning: LOS {} lies in projection plane. Ignoring'.format(ic))
         elif len(res) == 3:
             # Intersection is a point
@@ -133,14 +247,14 @@ def project_image(projection_dist, axes, aperture, data, beam_src, beam_axis):
     # Remove channels that wont be imaged
     data = data[valid_ic]   # (nvalid)
 
-    # Rotate target locations into coord sys aligned with avg_los_axis
+    # Rotate target locations into coord sys aligned with avg_los_axis (using Tait-Bryan angles)
     dis = np.sqrt(np.sum((aperture - plane_pt1) ** 2.0))
     beta = np.arcsin((aperture[2] - plane_pt1[2]) / dis)
     alpha = np.arctan2((plane_pt1[1] - aperture[1]), (plane_pt1[0] - aperture[0]))
     gamma = 0.
     target_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, target.T, origin=plane_pt1).T  # (nvalid, 3)
 
-    # Interpolate data onto uniform grid along target plane
+    # Interpolate data onto uniform grid along target plane (target_rotated[:, 0] is the same (~0) for all points)
     n1d = 100    # no. of grid points in each direction
     x1 = np.linspace(target_rotated[:, 1].min(), target_rotated[:, 1].max(), num = n1d)
     x2 = np.linspace(target_rotated[:, 2].min(), target_rotated[:, 2].max(), num = n1d + 1)
@@ -148,16 +262,64 @@ def project_image(projection_dist, axes, aperture, data, beam_src, beam_axis):
     grid_data = interpolate.griddata(target_rotated[:, 1:3], data, (x1_grid, x2_grid), fill_value = 0.)
 
     # Find two pts on beam centerline in mach coords
-    beam_pt1 = beam_src
-    beam_pt2 = beam_pt1 + beam_axis * 10.
+    t = 10.             # t is arbitrary
+    beam_pt1 = beam_pt
+    beam_pt2 = beam_pt1 + beam_axis * t
 
     # Rotate beam to relative coords
     beam_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, np.array([beam_pt1, beam_pt2]).T, origin=plane_pt1)  # (3, 2)
-    beam_rotated_pt1 = beam_rotated[1:3, 0]
-    beam_rotated_pt2 = beam_rotated[1:3, 1]
+#    beam_rotated_pt1 = beam_rotated[1:3, 0]     # (x1, x2)
+#    beam_rotated_pt2 = beam_rotated[1:3, 1]     # (x1, x2)
+    beam_rotated_pt1 = beam_rotated[:, 0]     # (3)
+    beam_rotated_pt2 = beam_rotated[:, 1]     # (3)
 
-#    return x1_grid, x2_grid, grid_data, valid_ic
-    return x1, x2, grid_data, beam_rotated_pt1, beam_rotated_pt2 - beam_rotated_pt1
+    beam_axis_rotated = beam_rotated_pt2 - beam_rotated_pt1
+
+    # Find where beam hits edges of target plane (still need to trim off based on second dimension)
+    if beam_axis_rotated[1] != 0.:
+        # Beam cuts thru plane left to right
+        t1 = (np.min(x1) - beam_rotated_pt1[1]) / beam_axis_rotated[1]
+        t2 = (np.max(x1) - beam_rotated_pt1[1]) / beam_axis_rotated[1]
+#        beam_rotated_pt1 = beam_rotated_pt1 + beam_axis_rotated * t1
+#        beam_rotated_pt2 = beam_rotated_pt1 + beam_axis_rotated * t2
+    if beam_axis_rotated[2] != 0.:
+        # Beam cuts thru plane left to right
+        t1_b = (np.min(x2) - beam_rotated_pt1[2]) / beam_axis_rotated[2]
+        t2_b = (np.max(x2) - beam_rotated_pt1[2]) / beam_axis_rotated[2]
+#        beam_rotated_pt1 = beam_rotated_pt1 + beam_axis_rotated * t1
+#        beam_rotated_pt2 = beam_rotated_pt1 + beam_axis_rotated * t2
+#        t1 = np.min([t1, t1_b])
+#        t2 = np.max([t2, t2_b])
+    else:
+        raise NotImplementedError('Beam centerline perpendicular to projection plane')
+
+    beam_rotated_pt1 = beam_rotated_pt1 + beam_axis_rotated * t1
+    beam_rotated_pt2 = beam_rotated_pt1 + beam_axis_rotated * t2
+
+    print(np.min(x1), np.max(x1))
+    print(beam_rotated_pt1)
+    print(beam_rotated_pt1 + beam_axis_rotated * t1_b)
+    print()
+    print(beam_rotated_pt2)
+    print(beam_rotated_pt2 + beam_axis_rotated * t2_b)
+      # Convert projection coordinates to angles
+    if angles:
+        x1 = np.degrees(np.arctan(x1 / projection_dist))
+        x2 = np.degrees(np.arctan(x2 / projection_dist))
+
+#        # Get lens loc in rel coords
+#        aperture_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, aperture, origin=plane_pt1)  # (3)
+##        print(-projection_dist - beam_rotated[0, :])
+#        print(aperture_rotated)
+#        # Dist b/n lens plane and beam pts
+#        beam_proj_dist = -projection_dist - beam_rotated[0, :]   # (2)
+#
+#        beam_rotated_pt1 = np.degrees(np.arctan(beam_rotated_pt1 / beam_proj_dist[0]))
+#        beam_rotated_pt2 = np.degrees(np.arctan(beam_rotated_pt2 / beam_proj_dist[1]))
+
+
+    return x1, x2, grid_data, beam_rotated_pt1[1:3], beam_rotated_pt2[1:3]
+
 
 def intersect_line_plane(plane_pt1, plane_pt2, plane_pt3, line_pt, line_axis):
         '''Calculate the intersection location between line and plane
@@ -475,18 +637,22 @@ class Spectra:
             w = (self.lam >= float(self.wl_min_imaging.get())) & (self.lam <= float(self.wl_max_imaging.get()))
             spec = integrate.simps(spec[:, w], x = self.lam[w], axis = 1)  # (this_nchan)
 
+            # Get all LOS vectors for this lens
             lens_axis = self.lens_axis[ch, :]           # (this_nchan, 3), all LOS axes for this lens
             lens_loc = self.lens_loc[ch[0], :]          # (3), same for all in ch
 
-#            yp_grid, zp_grid, grid_spec, valid_ic = project_image(float(self.projection_dist.get()), lens_axis, lens_loc, spec)
-            x1, x2, grid_spec, beam_pt, beam_axis = project_image(float(self.projection_dist.get()), lens_axis,
-                                                                  lens_loc, spec, self.beam_src, self.beam_axis)
+            # Project all LOS data onto 2D grid perpendicular to average LOS, a distance projection_dist from the lens
+            x1, x2, grid_spec, beam_pt1, beam_pt2 = project_image(lens_axis, lens_loc, spec, self.beam_src,
+                                                                  self.beam_axis, angles = False)
 
-            # Find where beam hits edges of target plane (Assumes crosses left and right, not general solution)
-            t1 = (np.min(x1) - beam_pt[0]) / beam_axis[0]
-            t2 = (np.max(x1) - beam_pt[0]) / beam_axis[0]
-            beam_pt1 = beam_pt + beam_axis * t1
-            beam_pt2 = beam_pt + beam_axis * t2
+#            x1, x2, grid_spec, beam_pt, beam_axis = project_image(float(self.projection_dist.get()), lens_axis,
+#                                                                  lens_loc, spec, self.beam_src, self.beam_axis)
+
+#            # Find where beam hits edges of target plane (Assumes crosses left and right, not general solution)
+#            t1 = (np.min(x1) - beam_pt[0]) / beam_axis[0]
+#            t2 = (np.max(x1) - beam_pt[0]) / beam_axis[0]
+#            beam_pt1 = beam_pt + beam_axis * t1
+#            beam_pt2 = beam_pt + beam_axis * t2
 
             # Plot contour
 #            c = ax.contourf(yp_grid, zp_grid, grid_spec, 50)
@@ -494,8 +660,8 @@ class Spectra:
             cb = fig.colorbar(c)
             cb.ax.set_ylabel('[$Ph\ /\ (s\ sr\ m^2)$]')
             ax.set_title('Intensity\nLens at [{:4.0f},{:4.0f},{:4.0f}]'.format(lens_loc[0], lens_loc[1], lens_loc[2]))
-            ax.set_xlabel('X1 [cm]')
-            ax.set_ylabel('X2 [cm]')
+            ax.set_xlabel('X1 [deg.]')
+            ax.set_ylabel('X2 [deg.]')
 
             # Overplot beam centerline
             ax.plot([beam_pt1[0], beam_pt2[0]], [beam_pt1[1], beam_pt2[1]], color = 'magenta')
