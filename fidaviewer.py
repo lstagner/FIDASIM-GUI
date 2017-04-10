@@ -160,7 +160,9 @@ Todo
 #    return x1, x2, grid_data, beam_rotated_pt1, beam_rotated_pt2 - beam_rotated_pt1
 
 
-def project_image(axes, aperture, data, beam_pt, beam_axis,
+def project_image(axes, aperture, data,
+                  beam_pt = None,
+                  beam_axis = None,
                   angles = True,
                   projection_dist = 100.):
     """Given several lines of sight and an intensity per LOS, project an image on a plane perpendicular
@@ -205,6 +207,8 @@ def project_image(axes, aperture, data, beam_pt, beam_axis,
     ----
 
     """
+    has_beam = (beam_pt is not None) and (beam_axis is not None)
+
     avg_los_axis = axes.mean(0)           # (3)
     nchan = axes.shape[0]
 
@@ -262,47 +266,39 @@ def project_image(axes, aperture, data, beam_pt, beam_axis,
     grid_data = interpolate.griddata(target_rotated[:, 1:3], data, (x1_grid, x2_grid), fill_value = 0.)
 
     # Find two pts on beam centerline in mach coords
-    t = 10.             # t is arbitrary
-    beam_pt1 = beam_pt
-    beam_pt2 = beam_pt1 + beam_axis * t
+    if has_beam:
+        t = 10.             # t is arbitrary
+        beam_pt1 = beam_pt
+        beam_pt2 = beam_pt1 + beam_axis * t
 
-    # Rotate beam to relative coords
-    beam_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, np.array([beam_pt1, beam_pt2]).T, origin=plane_pt1)  # (3, 2)
-#    beam_rotated_pt1 = beam_rotated[1:3, 0]     # (x1, x2)
-#    beam_rotated_pt2 = beam_rotated[1:3, 1]     # (x1, x2)
-    beam_rotated_pt1 = beam_rotated[:, 0]     # (3)
-    beam_rotated_pt2 = beam_rotated[:, 1]     # (3)
+        # Rotate beam to relative coords
+        beam_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, np.array([beam_pt1, beam_pt2]).T, origin=plane_pt1)  # (3, 2)
+        beam_rotated_pt1 = beam_rotated[:, 0]     # (3)
+        beam_rotated_pt2 = beam_rotated[:, 1]     # (3)
 
-    beam_axis_rotated = beam_rotated_pt2 - beam_rotated_pt1
+        beam_axis_rotated = beam_rotated_pt2 - beam_rotated_pt1
 
-    # Find where beam hits edges of target plane (still need to trim off based on second dimension)
-    if beam_axis_rotated[1] != 0.:
-        # Beam cuts thru plane left to right
-        t1 = (np.min(x1) - beam_rotated_pt1[1]) / beam_axis_rotated[1]
-        t2 = (np.max(x1) - beam_rotated_pt1[1]) / beam_axis_rotated[1]
-#        beam_rotated_pt1 = beam_rotated_pt1 + beam_axis_rotated * t1
+#        # Find where beam hits edges of target plane
+#        if beam_axis_rotated[1] != 0.:
+#            # Beam cuts thru plane left to right
+#            t1 = (np.min(x1) - beam_rotated_pt1[1]) / beam_axis_rotated[1]
+#            t2 = (np.max(x1) - beam_rotated_pt1[1]) / beam_axis_rotated[1]
+#        else:
+#            t1 = np.inf
+#            t2 = -np.inf
+#        if beam_axis_rotated[2] != 0.:
+#            # Beam cuts thru plane left to right
+#            t1_b = (np.min(x2) - beam_rotated_pt1[2]) / beam_axis_rotated[2]
+#            t2_b = (np.max(x2) - beam_rotated_pt1[2]) / beam_axis_rotated[2]
+#            t1 = np.min([t1, t1_b])
+#            t2 = np.max([t2, t2_b])
+#        if (beam_axis_rotated[1] == 0.) and (beam_axis_rotated[2] == 0.):
+#            raise NotImplementedError('Beam centerline perpendicular to projection plane')
+#
 #        beam_rotated_pt2 = beam_rotated_pt1 + beam_axis_rotated * t2
-    if beam_axis_rotated[2] != 0.:
-        # Beam cuts thru plane left to right
-        t1_b = (np.min(x2) - beam_rotated_pt1[2]) / beam_axis_rotated[2]
-        t2_b = (np.max(x2) - beam_rotated_pt1[2]) / beam_axis_rotated[2]
 #        beam_rotated_pt1 = beam_rotated_pt1 + beam_axis_rotated * t1
-#        beam_rotated_pt2 = beam_rotated_pt1 + beam_axis_rotated * t2
-#        t1 = np.min([t1, t1_b])
-#        t2 = np.max([t2, t2_b])
-    else:
-        raise NotImplementedError('Beam centerline perpendicular to projection plane')
 
-    beam_rotated_pt1 = beam_rotated_pt1 + beam_axis_rotated * t1
-    beam_rotated_pt2 = beam_rotated_pt1 + beam_axis_rotated * t2
-
-    print(np.min(x1), np.max(x1))
-    print(beam_rotated_pt1)
-    print(beam_rotated_pt1 + beam_axis_rotated * t1_b)
-    print()
-    print(beam_rotated_pt2)
-    print(beam_rotated_pt2 + beam_axis_rotated * t2_b)
-      # Convert projection coordinates to angles
+    # Convert projection coordinates to angles
     if angles:
         x1 = np.degrees(np.arctan(x1 / projection_dist))
         x2 = np.degrees(np.arctan(x2 / projection_dist))
@@ -311,14 +307,83 @@ def project_image(axes, aperture, data, beam_pt, beam_axis,
 #        aperture_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, aperture, origin=plane_pt1)  # (3)
 ##        print(-projection_dist - beam_rotated[0, :])
 #        print(aperture_rotated)
-#        # Dist b/n lens plane and beam pts
-#        beam_proj_dist = -projection_dist - beam_rotated[0, :]   # (2)
+
+        if has_beam:
+#            pt = np.copy(beam_rotated_pt1)
+#            numer = np.abs(pt)
+#            denom = np.abs(projection_dist + pt[0])
+#            if np.abs(pt[0]) < projection_dist:
+#                pt = np.degrees(np.arctan(numer / denom))
+#            else:
+#                pt = 180. - np.degrees(np.arctan(numer / denom))
+#            beam_rotated_pt1 = np.copy(pt)
 #
-#        beam_rotated_pt1 = np.degrees(np.arctan(beam_rotated_pt1 / beam_proj_dist[0]))
-#        beam_rotated_pt2 = np.degrees(np.arctan(beam_rotated_pt2 / beam_proj_dist[1]))
+#            pt = np.copy(beam_rotated_pt2)
+#            numer = np.abs(pt)
+#            denom = np.abs(projection_dist + pt[0])
+#            if np.abs(pt[0]) < projection_dist:
+#                pt = np.degrees(np.arctan(numer / denom))
+#            else:
+#                pt = 180. - np.degrees(np.arctan(numer / denom))
+#            beam_rotated_pt2 = pt
+#
+#            beam_axis_rotated = beam_rotated_pt2 - beam_rotated_pt1
+
+            # Move to system w/ lens at (0, 0, 0) to utilyze arctan2
+            beam_rotated_pt1[0] += projection_dist
+            beam_rotated_pt2[0] += projection_dist
+
+            beam_rotated_pt1[1:3] = np.degrees(np.arctan2(beam_rotated_pt1[0], beam_rotated_pt1[1:3]))
+#            beam_rotated_pt1[2] = np.degrees(np.arctan2(beam_rotated_pt1[0], beam_rotated_pt1[2]))
+            beam_rotated_pt2[1:3] = np.degrees(np.arctan2(beam_rotated_pt2[0], beam_rotated_pt2[1:3]))
+#            beam_rotated_pt2[2] = np.degrees(np.arctan2(beam_rotated_pt2[0], beam_rotated_pt2[2]))
+
+            if beam_rotated_pt1[1] < -90.:
+                beam_rotated_pt1[1] = -270. - beam_rotated_pt1[1]
+            else:
+                beam_rotated_pt1[1] = 90. - beam_rotated_pt1[1]
+
+            if beam_rotated_pt1[2] < -90.:
+                beam_rotated_pt1[2] = -270. - beam_rotated_pt1[2]
+            else:
+                beam_rotated_pt1[2] = 90. - beam_rotated_pt1[2]
+
+            if beam_rotated_pt2[1] < -90.:
+                beam_rotated_pt2[1] = -270. - beam_rotated_pt2[1]
+            else:
+                beam_rotated_pt2[1] = 90. - beam_rotated_pt2[1]
+
+            if beam_rotated_pt2[2] < -90.:
+                beam_rotated_pt2[2] = -270. - beam_rotated_pt2[2]
+            else:
+                beam_rotated_pt2[2] = 90. - beam_rotated_pt2[2]
+
+            beam_axis_rotated = beam_rotated_pt2 - beam_rotated_pt1
 
 
-    return x1, x2, grid_data, beam_rotated_pt1[1:3], beam_rotated_pt2[1:3]
+    # Find where beam hits edges of target plane
+    if has_beam:
+        if beam_axis_rotated[1] != 0.:
+            # Beam cuts thru plane left to right
+            t1 = (np.min(x1) - beam_rotated_pt1[1]) / beam_axis_rotated[1]
+            t2 = (np.max(x1) - beam_rotated_pt1[1]) / beam_axis_rotated[1]
+        else:
+            t1 = -np.inf
+            t2 = np.inf
+        if beam_axis_rotated[2] != 0.:
+            # Beam cuts thru plane left to right
+            t1_b = (np.min(x2) - beam_rotated_pt1[2]) / beam_axis_rotated[2]
+            t2_b = (np.max(x2) - beam_rotated_pt1[2]) / beam_axis_rotated[2]
+            t1 = np.max([t1, t1_b])
+            t2 = np.min([t2, t2_b])
+        if (beam_axis_rotated[1] == 0.) and (beam_axis_rotated[2] == 0.):
+            raise NotImplementedError('Beam centerline perpendicular to projection plane')
+        beam_rotated_pt2 = beam_rotated_pt1 + beam_axis_rotated * t2
+        beam_rotated_pt1 = beam_rotated_pt1 + beam_axis_rotated * t1
+
+        return x1, x2, grid_data, beam_rotated_pt1[1:3], beam_rotated_pt2[1:3]
+    else:
+        return x1, x2, grid_data
 
 
 def intersect_line_plane(plane_pt1, plane_pt2, plane_pt3, line_pt, line_axis):
@@ -642,12 +707,14 @@ class Spectra:
             lens_loc = self.lens_loc[ch[0], :]          # (3), same for all in ch
 
             # Project all LOS data onto 2D grid perpendicular to average LOS, a distance projection_dist from the lens
-            x1, x2, grid_spec, beam_pt1, beam_pt2 = project_image(lens_axis, lens_loc, spec, self.beam_src,
-                                                                  self.beam_axis, angles = False)
+            x1, x2, grid_spec, beam_pt1, beam_pt2 = project_image(lens_axis, lens_loc, spec,
+                                                                  beam_pt = self.beam_src,
+                                                                  beam_axis = self.beam_axis,
+                                                                  angles = True)
 
 #            x1, x2, grid_spec, beam_pt, beam_axis = project_image(float(self.projection_dist.get()), lens_axis,
 #                                                                  lens_loc, spec, self.beam_src, self.beam_axis)
-
+#            print(beam_pt1, beam_pt2 )
 #            # Find where beam hits edges of target plane (Assumes crosses left and right, not general solution)
 #            t1 = (np.min(x1) - beam_pt[0]) / beam_axis[0]
 #            t2 = (np.max(x1) - beam_pt[0]) / beam_axis[0]
