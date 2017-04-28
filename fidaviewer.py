@@ -395,11 +395,8 @@ def to_angle_space(a, xhat, yhat, zhat):
 
     Returns
     -------
-    ang1 : array (nchan)
-        Angle that 'a' deviates from zhat in the xhat direction
-
-    ang2 : array (nchan)
-        Angle that 'a' deviates from zhat in the yhat direction
+    angles : array (nchan, 2)
+        Angle that 'a' deviates from zhat in the xhat direction and in the yhat direction
     """
     nchan = a.shape[0]
 
@@ -413,7 +410,7 @@ def to_angle_space(a, xhat, yhat, zhat):
     a_minus_a_dot_yhat_yhat_mag = np.sqrt(np.sum(a_minus_a_dot_yhat_yhat ** 2, axis=1))  # (nchan)
     arg = np.sum(a_minus_a_dot_yhat_yhat * zhat.reshape(1, 3), axis=1) / a_minus_a_dot_yhat_yhat_mag
     arg[arg > 1.] = 1.    # remove floating point errors
-    ang1 = np.sign(a_dot_xhat) * np.arccos(arg)
+    ang1 = np.sign(a_dot_xhat) * np.arccos(arg)     # (nchan)
 
     # Find angle in yhat, zhat plane
     a_dot_yhat = np.sum(a * yhat.reshape(1, 3), axis=1)  # (nchan)
@@ -425,9 +422,9 @@ def to_angle_space(a, xhat, yhat, zhat):
     a_minus_a_dot_xhat_xhat_mag = np.sqrt(np.sum(a_minus_a_dot_xhat_xhat ** 2, axis=1))  # (nchan)
     arg = np.sum(a_minus_a_dot_xhat_xhat * zhat.reshape(1, 3), axis=1) / a_minus_a_dot_xhat_xhat_mag
     arg[arg > 1.] = 1.   # remove floating point errors
-    ang2 = np.sign(a_dot_yhat) * np.arccos(arg)
+    ang2 = np.sign(a_dot_yhat) * np.arccos(arg)    # (nchan)
 
-    return ang1, ang2
+    return np.array([ang1, ang2]).T     # (nchan, 2)
 
 def project_image(axis=None,
                   lens=None,
@@ -459,14 +456,20 @@ def project_image(axis=None,
 
     Returns
     -------
-    x1_grid : float array (100, 101)
+    x1 : array (100)
         Relative coordinates for grid_data (angle (deg) perpendicular to average LOS axis)
 
-    x2_grid : float array (100, 101)
+    x2 : array (101)
         Second set of relative coordinates for grid_data (angle (deg) perpendicular to average LOS axis)
 
-    grid_data : float array (100, 101)
-        data interpolated onto a uniform grid on a plane perpendicular to the average LOS axis
+    grid_data : array (100, 101)
+        Data interpolated onto a uniform grid on a plane perpendicular to the average LOS axis
+
+    beam_pt1 : array (2)
+        Beam coordinates in 2-angle space for 1st beam point
+
+    beam_pt2 : array (2)
+        Beam coordinates in 2-angle space for 2nd beam point
 
     Todo
     ----
@@ -486,43 +489,40 @@ def project_image(axis=None,
     yhat = np.cross(zhat, xhat)  # (3)
 
     # Get angles along xhat and yhat for LOS
-    ang1, ang2 = to_angle_space(axis, xhat, yhat, zhat)    # (nchan), (nchan)
+    angs = to_angle_space(axis, xhat, yhat, zhat)    # (nchan, 2)
 
     # Interpolate data onto uniform grid of angles
     n1d = 100    # no. of grid points in each direction
-    x1 = np.linspace(ang1.min(), ang1.max(), num = n1d)
-    x2 = np.linspace(ang2.min(), ang2.max(), num = n1d + 1)
+    x1 = np.linspace(angs[:, 0].min(), angs[:, 0].max(), num = n1d)
+    x2 = np.linspace(angs[:, 1].min(), angs[:, 1].max(), num = n1d + 1)
     x1_grid, x2_grid = np.meshgrid(x1, x2, indexing='ij')
-    grid_data = interpolate.griddata(np.array([ang1, ang2]).T, data, (x1_grid, x2_grid), fill_value=0.)
+    grid_data = interpolate.griddata(np.array([angs[:, 0], angs[:, 1]]).T, data, (x1_grid, x2_grid), fill_value=0.)
 
-    # Find where beam hits edges of target plane
-#        if beam_axis_rotated[1] != 0.:
-#            # Beam cuts thru plane left to right
-#            t1 = (np.min(x1) - beam_rotated_pt1[1]) / beam_axis_rotated[1]
-#            t2 = (np.max(x1) - beam_rotated_pt1[1]) / beam_axis_rotated[1]
-#        else:
-#            t1 = -np.inf
-#            t2 = np.inf
-#        if beam_axis_rotated[2] != 0.:
-#            # Beam cuts thru plane left to right
-#            t1_b = (np.min(x2) - beam_rotated_pt1[2]) / beam_axis_rotated[2]
-#            t2_b = (np.max(x2) - beam_rotated_pt1[2]) / beam_axis_rotated[2]
-#            t1 = np.max([t1, t1_b])
-#            t2 = np.min([t2, t2_b])
-#        if (beam_axis_rotated[1] == 0.) and (beam_axis_rotated[2] == 0.):
-#            raise NotImplementedError('Beam centerline perpendicular to projection plane')
-#        beam_rotated_pt2 = beam_rotated_pt1 + beam_axis_rotated * t2
-#        beam_rotated_pt1 = beam_rotated_pt1 + beam_axis_rotated * t1
-
-    # Just pick two points on the beam centerline for now
+    # Pick two points on the beam centerline
     beam_vecs = np.zeros((2, 3))
     beam_vecs[0, :] = beam_pt - lens
     beam_vecs[1, :] = beam_pt + beam_axis * 10. - lens
 
     # Get angles along xhat and yhat for beam points
-    beam_rotated_pt1, beam_rotated_pt2 = to_angle_space(beam_vecs, xhat, yhat, zhat)
+    beam_angs = to_angle_space(beam_vecs, xhat, yhat, zhat)   # (2, 2) = (2-pts, 2-space)
 
-    return x1, x2, grid_data, beam_rotated_pt1, beam_rotated_pt2
+    # Define beam centerline in angle coordinates and move beam points to edge of angle grid
+    beam_axis = np.squeeze(np.diff(beam_angs, axis=0))
+    if beam_axis[0] != 0.:
+        t1 = (x1.min() - beam_angs[0, 0]) / beam_axis[0]
+        t2 = (x1.max() - beam_angs[0, 0]) / beam_axis[0]
+    else:
+        t1 = -np.inf
+        t2 = np.inf
+    if beam_axis[1] != 0.:
+        t1_b = (x2.min() - beam_angs[0, 1]) / beam_axis[1]
+        t2_b = (x2.max() - beam_angs[0, 1]) / beam_axis[1]
+        t1 = np.max([t1, t1_b])
+        t2 = np.min([t2, t2_b])
+    beam_angs[0, :] = [beam_angs[0, 0] + beam_axis[0] * t1, beam_angs[0, 1] + beam_axis[1] * t1]
+    beam_angs[1, :] = [beam_angs[1, 0] + beam_axis[0] * t2, beam_angs[1, 1] + beam_axis[1] * t2]
+
+    return x1, x2, grid_data, beam_angs[0, :], beam_angs[1, :]
 
 def intersect_line_plane(plane_pt1, plane_pt2, plane_pt3, line_pt, line_axis):
         '''Calculate the intersection location between line and plane
