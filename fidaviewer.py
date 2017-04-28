@@ -33,10 +33,11 @@ Todo
 * in taking mean of beam densities, should it only be for non-zero elements? As grid vol --> inf, density --> 0 otherwise
 * optimize: can more stuff be loaded only when used? can more stuff be saved and not recalculated (ie set/get)?
 * option to change volume element in neutral plotting for better fidelity in going from beam to mach coords
-* rerun sample file sim setting all bools to true
 * get more intellegent h5 reader to just grab what's needed
-* NPA needs work. I haven't used NPA data before - NGB
+* NPA needs work
 * currently seems to load neutrals twice. check this and fix
+* separate beam from project_image(). get beam angle coords in plot function itself
+* add tab for plotting beam grid, los, beam centerline
 """
 
 def to_angle_space(a, xhat, yhat, zhat):
@@ -148,13 +149,19 @@ def project_image(axis=None,
     zhat = axis.mean(0)
     zhat = zhat / np.linalg.norm(zhat)  # (3)
 
-    # Find any vector perp to zhat (by crossing w/ any non-colinear vector) to define the plane
-    any_vec = np.array([zhat[0] + 5., zhat[1], zhat[2]])   # 5. is arbitrary
-    xhat = np.cross(zhat, any_vec)
-    xhat = xhat / np.linalg.norm(xhat)
+#    # Find any vector perp to zhat (by crossing w/ any non-colinear vector) to define the plane
+#    any_vec = np.array([zhat[0] + 5., zhat[1], zhat[2]])   # 5. is arbitrary
+#    xhat = np.cross(zhat, any_vec)
+#    xhat = xhat / np.linalg.norm(xhat)
+#
+#    # Find second plane vector perp to first
+#    yhat = np.cross(zhat, xhat)  # (3)
 
-    # Find second plane vector perp to first
-    yhat = np.cross(zhat, xhat)  # (3)
+    # Get unit vector perp to beam
+    yhat = np.cross(zhat, beam_axis) / np.linalg.norm(beam_axis)
+
+    # Get unit vector along beam
+    xhat = np.cross(yhat, zhat)
 
     # Get angles along xhat and yhat for LOS
     angs = to_angle_space(axis, xhat, yhat, zhat)    # (nchan, 2)
@@ -326,9 +333,9 @@ def find_lenses(nchan, lens_loc):
 class Spectra:
     """ Spectra object that contains plot methods and parameters"""
     def __init__(self, nml):
-        dir = nml["result_dir"]
+        result_dir = nml["result_dir"]
         runid = nml["runid"]
-        spec_file = os.path.join(dir, runid+'_spectra.h5')
+        spec_file = os.path.join(result_dir, runid+'_spectra.h5')
         geo_file = nml["geometry_file"]
         self._has_spectra = os.path.isfile(spec_file)
         self._has_geo = os.path.isfile(geo_file)
@@ -367,7 +374,7 @@ class Spectra:
             self.halo_on_imaging = tk.BooleanVar(value = self.has_bes)
             self.fida_on_imaging = tk.BooleanVar(value = self.has_fida)
             self.brems_on_imaging = tk.BooleanVar(value = self.has_brems)
-            self.projection_dist = tk.StringVar(value = 100.)
+#            self.projection_dist = tk.StringVar(value = 100.)
 
             if self.has_brems:
                 self.brems = spec['brems']
@@ -519,17 +526,7 @@ class Spectra:
                                                                   beam_pt=self.beam_src,
                                                                   beam_axis=self.beam_axis)
 
-#            x1, x2, grid_spec, beam_pt, beam_axis = project_image(float(self.projection_dist.get()), lens_axis,
-#                                                                  lens_loc, spec, self.beam_src, self.beam_axis)
-#            print(beam_pt1, beam_pt2 )
-#            # Find where beam hits edges of target plane (Assumes crosses left and right, not general solution)
-#            t1 = (np.min(x1) - beam_pt[0]) / beam_axis[0]
-#            t2 = (np.max(x1) - beam_pt[0]) / beam_axis[0]
-#            beam_pt1 = beam_pt + beam_axis * t1
-#            beam_pt2 = beam_pt + beam_axis * t2
-
             # Plot contour
-#            c = ax.contourf(yp_grid, zp_grid, grid_spec, 50)
             c = ax.contourf(np.degrees(x1), np.degrees(x2), grid_spec.T, 50)
             cb = fig.colorbar(c)
             cb.ax.set_ylabel('[$Ph\ /\ (s\ sr\ m^2)$]')
@@ -538,12 +535,9 @@ class Spectra:
             ax.set_ylabel('X2 [deg.]')
 
             # Overplot beam centerline
-            beam_pt1 = np.degrees(beam_pt1)
-            beam_pt2 = np.degrees(beam_pt2)
-            ax.plot([beam_pt1[0], beam_pt2[0]], [beam_pt1[1], beam_pt2[1]], color = 'magenta')
-#            arr = plt.Arrow(beam_pt1[0], beam_pt1[1], 0.5, 0.5)
-#            ax.add_patch(arr)
-#            ax.arrow(beam_pt1[0], beam_pt1[1], 0.5, 0.5, head_width=0.05, head_length=0.1, fc='k', ec='k')
+#            beam_pt1 = np.degrees(beam_pt1)
+#            beam_pt2 = np.degrees(beam_pt2)
+#            ax.plot([beam_pt1[0], beam_pt2[0]], [beam_pt1[1], beam_pt2[1]], color = 'magenta')
             canvas.show()
         else:
             print('No spectra selected to plot')
@@ -605,11 +599,11 @@ class Spectra:
 class NPA:
     """ NPA object that contains plot methods and parameters"""
     def __init__(self, nml):
-        dir = nml["result_dir"]
+        result_dir = nml["result_dir"]
         runid = nml["runid"]
-        npa_file = os.path.join(dir,runid+'_npa.h5')
-        wght_file = os.path.join(dir,runid+'_npa_weights.h5')
-        neut_file = os.path.join(dir,runid+'_neutrals.h5')
+        npa_file = os.path.join(result_dir, runid + '_npa.h5')
+        wght_file = os.path.join(result_dir, runid + '_npa_weights.h5')
+        neut_file = os.path.join(result_dir, runid + '_neutrals.h5')
         geo_file = nml["geometry_file"]
 
         self._has_npa = os.path.isfile(npa_file)
@@ -690,10 +684,10 @@ class NPA:
 class Weights:
     """ Weights object that contains plot methods and parameters"""
     def __init__(self,nml):
-        dir = nml["result_dir"]
+        result_dir = nml["result_dir"]
         runid = nml["runid"]
-        npa_wght_file = os.path.join(dir,runid+'_npa_weights.h5')
-        fida_wght_file = os.path.join(dir,runid+'_fida_weights.h5')
+        npa_wght_file = os.path.join(result_dir,runid+'_npa_weights.h5')
+        fida_wght_file = os.path.join(result_dir,runid+'_fida_weights.h5')
 
         self._has_npa_wght = os.path.isfile(npa_wght_file)
         self._has_fida_wght = os.path.isfile(fida_wght_file)
@@ -757,9 +751,9 @@ class Weights:
 class Neutrals:
     """ Neutrals object that contains plot methods and parameters"""
     def __init__(self, nml):
-        dir = nml["result_dir"]
+        result_dir = nml["result_dir"]
         runid = nml["runid"]
-        neut_file = os.path.join(dir,runid+'_neutrals.h5')
+        neut_file = os.path.join(result_dir,runid+'_neutrals.h5')
         geo_file = nml["geometry_file"]
 
         self._has_neut = os.path.isfile(neut_file)
@@ -1355,8 +1349,8 @@ class Viewer:
             ttk.Button(self.imaging_frame, text = 'Plot Brems',\
             	        command = (lambda: self.spec.plot_brems_image(self.fig, self.canvas))).pack(side = tk.TOP, expand = tk.Y, fill = tk.BOTH)
 
-            ttk.Label(self.imaging_frame, text = 'Projection Distance (cm)').pack()
-            ttk.Entry(self.imaging_frame, textvariable = self.spec.projection_dist, state = tk.NORMAL, width = 10).pack()
+#            ttk.Label(self.imaging_frame, text = 'Projection Distance (cm)').pack()
+#            ttk.Entry(self.imaging_frame, textvariable = self.spec.projection_dist, state = tk.NORMAL, width = 10).pack()
         else:
             ttk.Label(self.imaging_frame, text = '\n\nNo imaging data found').pack()
 
