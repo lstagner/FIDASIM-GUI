@@ -366,6 +366,55 @@ Todo
 #    else:
 #        return x1, x2, grid_data
 
+def to_angle_space(a, xhat, yhat, zhat):
+    """Convert from distance-space to angle-space.
+
+    Parameters
+    ----------
+    a : array, (nchan, 3)
+        Vectors to be converted to angles. Emanating from single location ('lens')
+
+    xhat : array, (3)
+        Unit vector perp to yhat and zhat
+
+    yhat : array, (3)
+        Unit vector perp to xhat and zhat
+
+    zhat : array, (3)
+        Unit vector defining zero-angle position. Points from lens to some other point.
+
+    Returns
+    -------
+    ang1 : array (nchan)
+        Angle that 'a' deviates from zhat in the xhat direction
+
+    ang2 : array (nchan)
+        Angle that 'a' deviates from zhat in the yhat direction
+    """
+    nchan = a.shape[0]
+
+    # Find angle 1
+    a_dot_xhat = np.sum(a * xhat.reshape(1, 3), axis=1)  # (nchan)
+    a_dot_yhat = np.sum(a * yhat.reshape(1, 3), axis=1)  # (nchan)
+    a_dot_yhat_yhat = np.zeros((nchan, 3))
+    for i in range(nchan):
+        a_dot_yhat_yhat[i, :] = a_dot_yhat[i] * yhat
+    a_minus_a_dot_yhat_yhat = a - a_dot_yhat_yhat  # (nchan, 3)
+    a_minus_a_dot_yhat_yhat_mag = np.sqrt(np.sum(a_minus_a_dot_yhat_yhat ** 2, axis=1))  # (nchan)
+    ang1 = np.sign(a_dot_xhat) * np.cos(np.sum(a_minus_a_dot_yhat_yhat * zhat.reshape(1, 3), axis=1) / a_minus_a_dot_yhat_yhat_mag)
+
+    # Find angle 2
+    a_dot_yhat = np.sum(a * yhat.reshape(1, 3), axis=1)  # (nchan)
+    a_dot_xhat = np.sum(a * xhat.reshape(1, 3), axis=1)  # (nchan)
+    a_dot_xhat_xhat = np.zeros((nchan, 3))
+    for i in range(nchan):
+        a_dot_xhat_xhat[i, :] = a_dot_xhat[i] * xhat
+    a_minus_a_dot_xhat_xhat = a - a_dot_xhat_xhat  # (nchan, 3)
+    a_minus_a_dot_xhat_xhat_mag = np.sqrt(np.sum(a_minus_a_dot_xhat_xhat ** 2, axis=1))  # (nchan)
+    ang2 = np.sign(a_dot_yhat) * np.cos(np.sum(a_minus_a_dot_xhat_xhat * zhat.reshape(1, 3), axis=1) / a_minus_a_dot_xhat_xhat_mag)
+
+    return ang1, ang2
+
 def project_image(axis, lens, data,
                   beam_pt = None,
                   beam_axis = None):
@@ -412,11 +461,11 @@ def project_image(axis, lens, data,
 
     Todo
     ----
-
+    * Choose x or yhat to consistantly be the one that is more parallel to beam axis
     """
     has_beam = (beam_pt is not None) and (beam_axis is not None)
 
-    nchan = axis.shape[0]
+#    nchan = axis.shape[0]
 
     # Average LOS axis
     zhat = axis.mean(0)           # (3)
@@ -433,26 +482,27 @@ def project_image(axis, lens, data,
     # Find a. a = P - O = lens + axis * t - lens = axis * t. t is arbitrary, so let t = 1.
     a = axis  # (nchan, 3)
 
-    # Find angle 1
-    a_dot_xhat = np.sum(a * xhat.reshape(1, 3), axis=1)  # (nchan)
-    a_dot_yhat = np.sum(a * yhat.reshape(1, 3), axis=1)  # (nchan)
-    a_dot_yhat_yhat = np.zeros(nchan, 3)
-    for i in range(nchan):
-        a_dot_yhat_yhat[i, :] = a_dot_yhat[i] * yhat
-    a_minus_a_dot_yhat_yhat = a - a_dot_yhat_yhat  # (nchan, 3)
-    a_minus_a_dot_yhat_yhat_mag = np.sqrt(np.sum(a_minus_a_dot_yhat_yhat ** 2, axis=1))  # (nchan)
-    ang1 = np.sign(a_dot_xhat) * np.cos(np.sum(a_minus_a_dot_yhat_yhat * zhat.reshape(1, 3), axis=1) / a_minus_a_dot_yhat_yhat_mag)
+#    # Find angle 1
+#    a_dot_xhat = np.sum(a * xhat.reshape(1, 3), axis=1)  # (nchan)
+#    a_dot_yhat = np.sum(a * yhat.reshape(1, 3), axis=1)  # (nchan)
+#    a_dot_yhat_yhat = np.zeros(nchan, 3)
+#    for i in range(nchan):
+#        a_dot_yhat_yhat[i, :] = a_dot_yhat[i] * yhat
+#    a_minus_a_dot_yhat_yhat = a - a_dot_yhat_yhat  # (nchan, 3)
+#    a_minus_a_dot_yhat_yhat_mag = np.sqrt(np.sum(a_minus_a_dot_yhat_yhat ** 2, axis=1))  # (nchan)
+#    ang1 = np.sign(a_dot_xhat) * np.cos(np.sum(a_minus_a_dot_yhat_yhat * zhat.reshape(1, 3), axis=1) / a_minus_a_dot_yhat_yhat_mag)
+#
+#    # Find angle 2
+#    a_dot_yhat = np.sum(a * yhat.reshape(1, 3), axis=1)  # (nchan)
+#    a_dot_xhat = np.sum(a * xhat.reshape(1, 3), axis=1)  # (nchan)
+#    a_dot_xhat_xhat = np.zeros(nchan, 3)
+#    for i in range(nchan):
+#        a_dot_xhat_xhat[i, :] = a_dot_xhat[i] * xhat
+#    a_minus_a_dot_xhat_xhat = a - a_dot_xhat_xhat  # (nchan, 3)
+#    a_minus_a_dot_xhat_xhat_mag = np.sqrt(np.sum(a_minus_a_dot_xhat_xhat ** 2, axis=1))  # (nchan)
+#    ang2 = np.sign(a_dot_yhat) * np.cos(np.sum(a_minus_a_dot_xhat_xhat * zhat.reshape(1, 3), axis=1) / a_minus_a_dot_xhat_xhat_mag)
 
-    # Find angle 2
-    a_dot_yhat = np.sum(a * yhat.reshape(1, 3), axis=1)  # (nchan)
-    a_dot_xhat = np.sum(a * xhat.reshape(1, 3), axis=1)  # (nchan)
-    a_dot_xhat_xhat = np.zeros(nchan, 3)
-    for i in range(nchan):
-        a_dot_xhat_xhat[i, :] = a_dot_xhat[i] * xhat
-    a_minus_a_dot_xhat_xhat = a - a_dot_xhat_xhat  # (nchan, 3)
-    a_minus_a_dot_xhat_xhat_mag = np.sqrt(np.sum(a_minus_a_dot_xhat_xhat ** 2, axis=1))  # (nchan)
-    ang2 = np.sign(a_dot_yhat) * np.cos(np.sum(a_minus_a_dot_xhat_xhat * zhat.reshape(1, 3), axis=1) / a_minus_a_dot_xhat_xhat_mag)
-
+    ang1, ang2 = to_angle_space(a, xhat, yhat, zhat)
 
 #    # Step thru each LOS and find intersection with plane (call them 'target' points)
 #    target = list()         # locations where LOS hit projection plane
@@ -484,82 +534,96 @@ def project_image(axis, lens, data,
 #    gamma = 0.
 #    target_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, target.T, origin=plane_pt1).T  # (nvalid, 3)
 
+#    # Interpolate data onto uniform grid along target plane (target_rotated[:, 0] is the same (~0) for all points)
+#    n1d = 100    # no. of grid points in each direction
+#    x1 = np.linspace(target_rotated[:, 1].min(), target_rotated[:, 1].max(), num = n1d)
+#    x2 = np.linspace(target_rotated[:, 2].min(), target_rotated[:, 2].max(), num = n1d + 1)
+#    x1_grid, x2_grid = np.meshgrid(x1, x2, indexing='ij')
+#    grid_data = interpolate.griddata(target_rotated[:, 1:3], data, (x1_grid, x2_grid), fill_value = 0.)
+
     # Interpolate data onto uniform grid along target plane (target_rotated[:, 0] is the same (~0) for all points)
     n1d = 100    # no. of grid points in each direction
-    x1 = np.linspace(target_rotated[:, 1].min(), target_rotated[:, 1].max(), num = n1d)
-    x2 = np.linspace(target_rotated[:, 2].min(), target_rotated[:, 2].max(), num = n1d + 1)
+    x1 = np.linspace(ang1.min(), ang1.max(), num = n1d)
+    x2 = np.linspace(ang2.min(), ang2.max(), num = n1d + 1)
     x1_grid, x2_grid = np.meshgrid(x1, x2, indexing='ij')
-    grid_data = interpolate.griddata(target_rotated[:, 1:3], data, (x1_grid, x2_grid), fill_value = 0.)
+    grid_data = interpolate.griddata(np.array([ang1, ang2]).T, data, (x1_grid, x2_grid), fill_value=0.)
 
-    # Find two pts on beam centerline in mach coords
-    if has_beam:
-        t = 10.             # t is arbitrary
-        beam_pt1 = beam_pt
-        beam_pt2 = beam_pt1 + beam_axis * t
-
-        # Rotate beam to relative coords
-        beam_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, np.array([beam_pt1, beam_pt2]).T, origin=plane_pt1)  # (3, 2)
-        beam_rotated_pt1 = beam_rotated[:, 0]     # (3)
-        beam_rotated_pt2 = beam_rotated[:, 1]     # (3)
-
-        beam_axis_rotated = beam_rotated_pt2 - beam_rotated_pt1
+#    # Find two pts on beam centerline in mach coords
+#    if has_beam:
+#        t = 10.             # t is arbitrary
+#        beam_pt1 = beam_pt
+#        beam_pt2 = beam_pt1 + beam_axis * t
+#
+#        # Rotate beam to relative coords
+#        beam_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, np.array([beam_pt1, beam_pt2]).T, origin=plane_pt1)  # (3, 2)
+#        beam_rotated_pt1 = beam_rotated[:, 0]     # (3)
+#        beam_rotated_pt2 = beam_rotated[:, 1]     # (3)
+#
+#        beam_axis_rotated = beam_rotated_pt2 - beam_rotated_pt1
 
     # Convert projection coordinates to angles
-    if angles:
-        x1 = np.degrees(np.arctan(x1 / projection_dist))
-        x2 = np.degrees(np.arctan(x2 / projection_dist))
-
-        if has_beam:
-            # Move to system w/ lens at (0, 0, 0) to utilyze arctan2
-            beam_rotated_pt1[0] += projection_dist
-            beam_rotated_pt2[0] += projection_dist
-
-            beam_rotated_pt1[1:3] = np.degrees(np.arctan2(beam_rotated_pt1[0], beam_rotated_pt1[1:3]))
-            beam_rotated_pt2[1:3] = np.degrees(np.arctan2(beam_rotated_pt2[0], beam_rotated_pt2[1:3]))
-
-            if beam_rotated_pt1[1] < -90.:
-                beam_rotated_pt1[1] = -270. - beam_rotated_pt1[1]
-            else:
-                beam_rotated_pt1[1] = 90. - beam_rotated_pt1[1]
-
-            if beam_rotated_pt1[2] < -90.:
-                beam_rotated_pt1[2] = -270. - beam_rotated_pt1[2]
-            else:
-                beam_rotated_pt1[2] = 90. - beam_rotated_pt1[2]
-
-            if beam_rotated_pt2[1] < -90.:
-                beam_rotated_pt2[1] = -270. - beam_rotated_pt2[1]
-            else:
-                beam_rotated_pt2[1] = 90. - beam_rotated_pt2[1]
-
-            if beam_rotated_pt2[2] < -90.:
-                beam_rotated_pt2[2] = -270. - beam_rotated_pt2[2]
-            else:
-                beam_rotated_pt2[2] = 90. - beam_rotated_pt2[2]
-
-            beam_axis_rotated = beam_rotated_pt2 - beam_rotated_pt1
+#    if angles:
+#        x1 = np.degrees(np.arctan(x1 / projection_dist))
+#        x2 = np.degrees(np.arctan(x2 / projection_dist))
+#
+#        if has_beam:
+#            # Move to system w/ lens at (0, 0, 0) to utilyze arctan2
+#            beam_rotated_pt1[0] += projection_dist
+#            beam_rotated_pt2[0] += projection_dist
+#
+#            beam_rotated_pt1[1:3] = np.degrees(np.arctan2(beam_rotated_pt1[0], beam_rotated_pt1[1:3]))
+#            beam_rotated_pt2[1:3] = np.degrees(np.arctan2(beam_rotated_pt2[0], beam_rotated_pt2[1:3]))
+#
+#            if beam_rotated_pt1[1] < -90.:
+#                beam_rotated_pt1[1] = -270. - beam_rotated_pt1[1]
+#            else:
+#                beam_rotated_pt1[1] = 90. - beam_rotated_pt1[1]
+#
+#            if beam_rotated_pt1[2] < -90.:
+#                beam_rotated_pt1[2] = -270. - beam_rotated_pt1[2]
+#            else:
+#                beam_rotated_pt1[2] = 90. - beam_rotated_pt1[2]
+#
+#            if beam_rotated_pt2[1] < -90.:
+#                beam_rotated_pt2[1] = -270. - beam_rotated_pt2[1]
+#            else:
+#                beam_rotated_pt2[1] = 90. - beam_rotated_pt2[1]
+#
+#            if beam_rotated_pt2[2] < -90.:
+#                beam_rotated_pt2[2] = -270. - beam_rotated_pt2[2]
+#            else:
+#                beam_rotated_pt2[2] = 90. - beam_rotated_pt2[2]
+#
+#            beam_axis_rotated = beam_rotated_pt2 - beam_rotated_pt1
 
     # Find where beam hits edges of target plane
     if has_beam:
-        if beam_axis_rotated[1] != 0.:
-            # Beam cuts thru plane left to right
-            t1 = (np.min(x1) - beam_rotated_pt1[1]) / beam_axis_rotated[1]
-            t2 = (np.max(x1) - beam_rotated_pt1[1]) / beam_axis_rotated[1]
-        else:
-            t1 = -np.inf
-            t2 = np.inf
-        if beam_axis_rotated[2] != 0.:
-            # Beam cuts thru plane left to right
-            t1_b = (np.min(x2) - beam_rotated_pt1[2]) / beam_axis_rotated[2]
-            t2_b = (np.max(x2) - beam_rotated_pt1[2]) / beam_axis_rotated[2]
-            t1 = np.max([t1, t1_b])
-            t2 = np.min([t2, t2_b])
-        if (beam_axis_rotated[1] == 0.) and (beam_axis_rotated[2] == 0.):
-            raise NotImplementedError('Beam centerline perpendicular to projection plane')
-        beam_rotated_pt2 = beam_rotated_pt1 + beam_axis_rotated * t2
-        beam_rotated_pt1 = beam_rotated_pt1 + beam_axis_rotated * t1
+#        if beam_axis_rotated[1] != 0.:
+#            # Beam cuts thru plane left to right
+#            t1 = (np.min(x1) - beam_rotated_pt1[1]) / beam_axis_rotated[1]
+#            t2 = (np.max(x1) - beam_rotated_pt1[1]) / beam_axis_rotated[1]
+#        else:
+#            t1 = -np.inf
+#            t2 = np.inf
+#        if beam_axis_rotated[2] != 0.:
+#            # Beam cuts thru plane left to right
+#            t1_b = (np.min(x2) - beam_rotated_pt1[2]) / beam_axis_rotated[2]
+#            t2_b = (np.max(x2) - beam_rotated_pt1[2]) / beam_axis_rotated[2]
+#            t1 = np.max([t1, t1_b])
+#            t2 = np.min([t2, t2_b])
+#        if (beam_axis_rotated[1] == 0.) and (beam_axis_rotated[2] == 0.):
+#            raise NotImplementedError('Beam centerline perpendicular to projection plane')
+#        beam_rotated_pt2 = beam_rotated_pt1 + beam_axis_rotated * t2
+#        beam_rotated_pt1 = beam_rotated_pt1 + beam_axis_rotated * t1
 
-        return x1, x2, grid_data, beam_rotated_pt1[1:3], beam_rotated_pt2[1:3]
+        beam_vecs = np.zeros((2, 3))
+        beam_vecs[0, :] = beam_pt - lens
+        beam_vecs[1, :] = beam_pt + beam_axis * 10. - lens
+
+        beam_rotated_pt1, beam_rotated_pt2 = to_angle_space(beam_vecs, xhat, yhat, zhat)
+
+        return x1, x2, grid_data, beam_rotated_pt1, beam_rotated_pt2
+#        return x1, x2, grid_data, beam_rotated_pt1[1:3], beam_rotated_pt2[1:3]
     else:
         return x1, x2, grid_data
 
@@ -886,8 +950,7 @@ class Spectra:
             # Project all LOS data onto 2D grid perpendicular to average LOS, a distance projection_dist from the lens
             x1, x2, grid_spec, beam_pt1, beam_pt2 = project_image(lens_axis, lens_loc, spec,
                                                                   beam_pt = self.beam_src,
-                                                                  beam_axis = self.beam_axis,
-                                                                  angles = True)
+                                                                  beam_axis = self.beam_axis)
 
 #            x1, x2, grid_spec, beam_pt, beam_axis = project_image(float(self.projection_dist.get()), lens_axis,
 #                                                                  lens_loc, spec, self.beam_src, self.beam_axis)
@@ -900,7 +963,7 @@ class Spectra:
 
             # Plot contour
 #            c = ax.contourf(yp_grid, zp_grid, grid_spec, 50)
-            c = ax.contourf(x1, x2, grid_spec.T, 50)
+            c = ax.contourf(np.degrees(x1), np.degrees(x2), grid_spec.T, 50)
             cb = fig.colorbar(c)
             cb.ax.set_ylabel('[$Ph\ /\ (s\ sr\ m^2)$]')
             ax.set_title('Intensity\nLens at [{:4.0f},{:4.0f},{:4.0f}]'.format(lens_loc[0], lens_loc[1], lens_loc[2]))
@@ -908,6 +971,8 @@ class Spectra:
             ax.set_ylabel('X2 [deg.]')
 
             # Overplot beam centerline
+            beam_pt1 = np.degrees(beam_pt1)
+            beam_pt2 = np.degrees(beam_pt2)
             ax.plot([beam_pt1[0], beam_pt2[0]], [beam_pt1[1], beam_pt2[1]], color = 'magenta')
 #            arr = plt.Arrow(beam_pt1[0], beam_pt1[1], 0.5, 0.5)
 #            ax.add_patch(arr)
