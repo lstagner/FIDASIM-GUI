@@ -3,7 +3,7 @@
 
 import sys
 import os
-import glob
+#import glob
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
 import numpy as np
@@ -15,149 +15,480 @@ import f90nml
 import collections
 #from scipy.integrate import simps
 import scipy.integrate as integrate
-import fidasim as fs
+#import fidasim as fs
 import scipy.interpolate as interpolate
+#import numpy as np
+from scipy.spatial.distance import cdist
 
 
 """
 Todo
 ----
-* consider showing images vs angles instead of distance (ie independent of projection_dist)
+* use http://nbviewer.jupyter.org/gist/tillahoffmann/f844bce2ec264c1c8cb5 for binning neutral density and spec (project_image)
+* change images to use angles instead of distance (ie independent of projection_dist)
 * add beam centerline to imaging contour plots
 * cannot edit wavelengths until after changing channel and replotting. Why? Fix this.
-* fix bad plots of neutrals in mach coords
+* fix bad plots of neutrals in mach coords by using kde
 * clean plots when all data turned off
 * with smart h5 reader, could load only info needed to make gui first, then only get data when called, and then save for later use
 * take units from files, don't hardcode. Low priority future-proofing
 * in taking mean of beam densities, should it only be for non-zero elements? As grid vol --> inf, density --> 0 otherwise
 * optimize: can more stuff be loaded only when used? can more stuff be saved and not recalculated (ie set/get)?
 * option to change volume element in neutral plotting for better fidelity in going from beam to mach coords
-* rerun sample file sim setting all bools to true
 * get more intellegent h5 reader to just grab what's needed
-* NPA needs work. I haven't used NPA data before - NGB
+* NPA needs work
 * currently seems to load neutrals twice. check this and fix
-
-* DONE - add validation of wavelength min and max to not be beyond data. Don't do this
-* DONE - can cache pickle files to make much faster. Don't do this.
-* DONE - make 'reset wavelength range' button for spectra and imaging frames
-* DONE - find out if histogram2d gives left edges or right. A: right side. doing it right
-* DONE - separate concept of nbi_on and full_on from has_nb_spec and has_full_spec to separate spectra from imaging frames
-* DONE - add another tab to gui "Imaging" w/ "Lens" drop down. Choose spectra and wavelength range to integrate and make contour
-* DONE - display msg like "No NPA file found" under each tab for clarity
-* DONE - use f90nml python package to parse the fortran namelist file and find what was and wasn't calculated
-* DONE - check for multiple matching filenames
-* DONE - what is .get() business? This is tk setter/getter feature
-* DONE - Make brems separate signal and stop adding to other spectra
-* DONE - change xyz to uvw and vise versa in Neutrals
-* DONE - neutral density legend units
-* DONE - use histogram2d when ~np.array_equal(x, uniq(x_grid)), etc. ie beam coords != mach coords
-* DONE - give window name of dir
-* DONE - how to sort channels in drop down box?
-* DONE - put NB name on plot (in geo file)
-* DONE - implement multiple matching filenames
-* DONE - Make Spectra wl_min and wl_max changeable from gui
+* separate beam from project_image(). get beam angle coords in plot function itself
+* add tab for plotting beam grid, los, beam centerline
 """
 
-def project_image(projection_dist, axes, aperture, data, beam_src, beam_axis):
-    """Given several lines of sight and an intensity per LOS, project an image on a plane perpendicular
-    to the average LOS axis.
+
+"""Taken from http://nbviewer.jupyter.org/gist/tillahoffmann/f844bce2ec264c1c8cb5 or
+https://gist.github.com/tillahoffmann/f844bce2ec264c1c8cb5
+"""
+class gaussian_kde(object):
+    """Representation of a kernel-density estimate using Gaussian kernels.
+
+    Kernel density estimation is a way to estimate the probability density
+    function (PDF) of a random variable in a non-parametric way.
+    `gaussian_kde` works for both uni-variate and multi-variate data.   It
+    includes automatic bandwidth determination.  The estimation works best for
+    a unimodal distribution; bimodal or multi-modal distributions tend to be
+    oversmoothed.
 
     Parameters
     ----------
-    projection_dist : float
-        Distance along average LOS axis for projection plane
+    dataset : array_like
+        Datapoints to estimate from. In case of univariate data this is a 1-D
+        array, otherwise a 2-D array with shape (# of dims, # of data).
+    bw_method : str, scalar or callable, optional
+        The method used to calculate the estimator bandwidth.  This can be
+        'scott', 'silverman', a scalar constant or a callable.  If a scalar,
+        this will be used directly as `kde.factor`.  If a callable, it should
+        take a `gaussian_kde` instance as only parameter and return a scalar.
+        If None (default), 'scott' is used.  See Notes for more details.
+    weights : array_like, shape (n, ), optional, default: None
+        An array of weights, of the same shape as `x`.  Each value in `x`
+        only contributes its associated weight towards the bin count
+        (instead of 1).
 
-    axes : array (nchan, 3)
-        Normalized axes vectors defining LOS
+    Attributes
+    ----------
+    dataset : ndarray
+        The dataset with which `gaussian_kde` was initialized.
+    d : int
+        Number of dimensions.
+    n : int
+        Number of datapoints.
+    neff : float
+        Effective sample size using Kish's approximation.
+    factor : float
+        The bandwidth factor, obtained from `kde.covariance_factor`, with which
+        the covariance matrix is multiplied.
+    covariance : ndarray
+        The covariance matrix of `dataset`, scaled by the calculated bandwidth
+        (`kde.factor`).
+    inv_cov : ndarray
+        The inverse of `covariance`.
 
-    aperture : array (3)
-        Common location for all LOS (aperature or lens)
+    Methods
+    -------
+    kde.evaluate(points) : ndarray
+        Evaluate the estimated pdf on a provided set of points.
+    kde(points) : ndarray
+        Same as kde.evaluate(points)
+    kde.pdf(points) : ndarray
+        Alias for ``kde.evaluate(points)``.
+    kde.set_bandwidth(bw_method='scott') : None
+        Computes the bandwidth, i.e. the coefficient that multiplies the data
+        covariance matrix to obtain the kernel covariance matrix.
+        .. versionadded:: 0.11.0
+    kde.covariance_factor : float
+        Computes the coefficient (`kde.factor`) that multiplies the data
+        covariance matrix to obtain the kernel covariance matrix.
+        The default is `scotts_factor`.  A subclass can overwrite this method
+        to provide a different method, or set it through a call to
+        `kde.set_bandwidth`.
+
+    Notes
+    -----
+    Bandwidth selection strongly influences the estimate obtained from the KDE
+    (much more so than the actual shape of the kernel).  Bandwidth selection
+    can be done by a "rule of thumb", by cross-validation, by "plug-in
+    methods" or by other means; see [3]_, [4]_ for reviews.  `gaussian_kde`
+    uses a rule of thumb, the default is Scott's Rule.
+
+    Scott's Rule [1]_, implemented as `scotts_factor`, is::
+
+        n**(-1./(d+4)),
+
+    with ``n`` the number of data points and ``d`` the number of dimensions.
+    Silverman's Rule [2]_, implemented as `silverman_factor`, is::
+
+        (n * (d + 2) / 4.)**(-1. / (d + 4)).
+
+    Good general descriptions of kernel density estimation can be found in [1]_
+    and [2]_, the mathematics for this multi-dimensional implementation can be
+    found in [1]_.
+
+    References
+    ----------
+    .. [1] D.W. Scott, "Multivariate Density Estimation: Theory, Practice, and
+           Visualization", John Wiley & Sons, New York, Chicester, 1992.
+    .. [2] B.W. Silverman, "Density Estimation for Statistics and Data
+           Analysis", Vol. 26, Monographs on Statistics and Applied Probability,
+           Chapman and Hall, London, 1986.
+    .. [3] B.A. Turlach, "Bandwidth Selection in Kernel Density Estimation: A
+           Review", CORE and Institut de Statistique, Vol. 19, pp. 1-33, 1993.
+    .. [4] D.M. Bashtannyk and R.J. Hyndman, "Bandwidth selection for kernel
+           conditional density estimation", Computational Statistics & Data
+           Analysis, Vol. 36, pp. 279-298, 2001.
+
+    Examples
+    --------
+    Generate some random two-dimensional data:
+
+    >>> from scipy import stats
+    >>> def measure(n):
+    >>>     "Measurement model, return two coupled measurements."
+    >>>     m1 = np.random.normal(size=n)
+    >>>     m2 = np.random.normal(scale=0.5, size=n)
+    >>>     return m1+m2, m1-m2
+
+    >>> m1, m2 = measure(2000)
+    >>> xmin = m1.min()
+    >>> xmax = m1.max()
+    >>> ymin = m2.min()
+    >>> ymax = m2.max()
+
+    Perform a kernel density estimate on the data:
+
+    >>> X, Y = np.mgrid[xmin:xmax:100j, ymin:ymax:100j]
+    >>> positions = np.vstack([X.ravel(), Y.ravel()])
+    >>> values = np.vstack([m1, m2])
+    >>> kernel = stats.gaussian_kde(values)
+    >>> Z = np.reshape(kernel(positions).T, X.shape)
+
+    Plot the results:
+
+    >>> import matplotlib.pyplot as plt
+    >>> fig = plt.figure()
+    >>> ax = fig.add_subplot(111)
+    >>> ax.imshow(np.rot90(Z), cmap=plt.cm.gist_earth_r,
+    ...           extent=[xmin, xmax, ymin, ymax])
+    >>> ax.plot(m1, m2, 'k.', markersize=2)
+    >>> ax.set_xlim([xmin, xmax])
+    >>> ax.set_ylim([ymin, ymax])
+    >>> plt.show()
+
+    """
+    def __init__(self, dataset, bw_method=None, weights=None):
+        self.dataset = np.atleast_2d(dataset)
+        if not self.dataset.size > 1:
+            raise ValueError("`dataset` input should have multiple elements.")
+        self.d, self.n = self.dataset.shape
+
+        if weights is not None:
+            self.weights = weights / np.sum(weights)
+        else:
+            self.weights = np.ones(self.n) / self.n
+
+        # Compute the effective sample size
+        # http://surveyanalysis.org/wiki/Design_Effects_and_Effective_Sample_Size#Kish.27s_approximate_formula_for_computing_effective_sample_size
+        self.neff = 1.0 / np.sum(self.weights ** 2)
+
+        self.set_bandwidth(bw_method=bw_method)
+
+    def evaluate(self, points):
+        """Evaluate the estimated pdf on a set of points.
+
+        Parameters
+        ----------
+        points : (# of dimensions, # of points)-array
+            Alternatively, a (# of dimensions,) vector can be passed in and
+            treated as a single point.
+
+        Returns
+        -------
+        values : (# of points,)-array
+            The values at each point.
+
+        Raises
+        ------
+        ValueError : if the dimensionality of the input points is different than
+                     the dimensionality of the KDE.
+
+        """
+        points = np.atleast_2d(points)
+
+        d, m = points.shape
+        if d != self.d:
+            if d == 1 and m == self.d:
+                # points was passed in as a row vector
+                points = np.reshape(points, (self.d, 1))
+                m = 1
+            else:
+                msg = "points have dimension %s, dataset has dimension %s" % (d,
+                    self.d)
+                raise ValueError(msg)
+
+        # compute the normalised residuals
+        chi2 = cdist(points.T, self.dataset.T, 'mahalanobis', VI=self.inv_cov) ** 2
+        # compute the pdf
+        result = np.sum(np.exp(-.5 * chi2) * self.weights, axis=1) / self._norm_factor
+
+        return result
+
+    __call__ = evaluate
+
+    def scotts_factor(self):
+        return np.power(self.neff, -1./(self.d+4))
+
+    def silverman_factor(self):
+        return np.power(self.neff*(self.d+2.0)/4.0, -1./(self.d+4))
+
+    #  Default method to calculate bandwidth, can be overwritten by subclass
+    covariance_factor = scotts_factor
+
+    def set_bandwidth(self, bw_method=None):
+        """Compute the estimator bandwidth with given method.
+
+        The new bandwidth calculated after a call to `set_bandwidth` is used
+        for subsequent evaluations of the estimated density.
+
+        Parameters
+        ----------
+        bw_method : str, scalar or callable, optional
+            The method used to calculate the estimator bandwidth.  This can be
+            'scott', 'silverman', a scalar constant or a callable.  If a
+            scalar, this will be used directly as `kde.factor`.  If a callable,
+            it should take a `gaussian_kde` instance as only parameter and
+            return a scalar.  If None (default), nothing happens; the current
+            `kde.covariance_factor` method is kept.
+
+        Notes
+        -----
+        .. versionadded:: 0.11
+
+        Examples
+        --------
+        >>> x1 = np.array([-7, -5, 1, 4, 5.])
+        >>> kde = stats.gaussian_kde(x1)
+        >>> xs = np.linspace(-10, 10, num=50)
+        >>> y1 = kde(xs)
+        >>> kde.set_bandwidth(bw_method='silverman')
+        >>> y2 = kde(xs)
+        >>> kde.set_bandwidth(bw_method=kde.factor / 3.)
+        >>> y3 = kde(xs)
+
+        >>> fig = plt.figure()
+        >>> ax = fig.add_subplot(111)
+        >>> ax.plot(x1, np.ones(x1.shape) / (4. * x1.size), 'bo',
+        ...         label='Data points (rescaled)')
+        >>> ax.plot(xs, y1, label='Scott (default)')
+        >>> ax.plot(xs, y2, label='Silverman')
+        >>> ax.plot(xs, y3, label='Const (1/3 * Silverman)')
+        >>> ax.legend()
+        >>> plt.show()
+
+        """
+        if bw_method is None:
+            pass
+        elif bw_method == 'scott':
+            self.covariance_factor = self.scotts_factor
+        elif bw_method == 'silverman':
+            self.covariance_factor = self.silverman_factor
+        elif np.isscalar(bw_method) and not isinstance(bw_method, string_types):
+            self._bw_method = 'use constant'
+            self.covariance_factor = lambda: bw_method
+        elif callable(bw_method):
+            self._bw_method = bw_method
+            self.covariance_factor = lambda: self._bw_method(self)
+        else:
+            msg = "`bw_method` should be 'scott', 'silverman', a scalar " \
+                  "or a callable."
+            raise ValueError(msg)
+
+        self._compute_covariance()
+
+    def _compute_covariance(self):
+        """Computes the covariance matrix for each Gaussian kernel using
+        covariance_factor().
+        """
+        self.factor = self.covariance_factor()
+        # Cache covariance and inverse covariance of the data
+        if not hasattr(self, '_data_inv_cov'):
+            # Compute the mean and residuals
+            _mean = np.sum(self.weights * self.dataset, axis=1)
+            _residual = (self.dataset - _mean[:, None])
+            # Compute the biased covariance
+            self._data_covariance = np.atleast_2d(np.dot(_residual * self.weights, _residual.T))
+            # Correct for bias (http://en.wikipedia.org/wiki/Weighted_arithmetic_mean#Weighted_sample_covariance)
+            self._data_covariance /= (1 - np.sum(self.weights ** 2))
+            self._data_inv_cov = np.linalg.inv(self._data_covariance)
+
+        self.covariance = self._data_covariance * self.factor**2
+        self.inv_cov = self._data_inv_cov / self.factor**2
+        self._norm_factor = np.sqrt(np.linalg.det(2*np.pi*self.covariance)) #* self.n
+
+def to_angle_space(a, xhat, yhat, zhat):
+    """Convert from distance-space to angle-space.
+
+    Let the normalized, reference vector be :math:`\\hat{z}`, the common position to be point :math:`\\vec{O}`, and a point in
+    question be :math:`\\vec{P}`. Let :math:`\\vec{a}=\\vec{P}-\\vec{O}`. Then the two angles giving the deviation of
+    :math:`\\vec{P}` from :math:`\\hat{z}` are given by:
+
+    .. math:: \\theta_1 = sign(\\vec{a} \\cdot \\hat{x}) \\cos^{-1} \\left(\\frac{(\\vec{a} - [\\vec{a} \\cdot \\hat{y}] \
+    \\hat{y}) \\cdot \\hat{z}}{||(\\vec{a} - [\\vec{a} \\cdot \\hat{y}]\\hat{y}||}\\right)
+
+    .. math:: \\theta_2 = sign(\\vec{a} \\cdot \\hat{y}) \\cos^{-1} \\left( \\frac{(\\vec{a} - [\\vec{a} \\cdot \\hat{x}] \
+    \\hat{x}) \\cdot\\hat{z}}{||(\\vec{a} - [\\vec{a} \\cdot \\hat{x}]\\hat{x}||} \\right)
+
+    Parameters
+    ----------
+    a : array, (nchan, 3)
+        Vectors to be converted to angles. Emanating from single location ('lens')
+
+    xhat : array, (3)
+        Unit vector perp to yhat and zhat
+
+    yhat : array, (3)
+        Unit vector perp to xhat and zhat
+
+    zhat : array, (3)
+        Unit vector defining zero-angle position. Points from lens to some other point.
+
+    Returns
+    -------
+    angles : array (nchan, 2)
+        Angle that 'a' deviates from zhat in the xhat direction and in the yhat direction
+    """
+    nchan = a.shape[0]
+
+    # Find angle in xhat, zhat plane
+    a_dot_xhat = np.dot(a, xhat)
+    a_dot_yhat = np.dot(a, yhat)
+    a_dot_yhat_yhat = a_dot_yhat.reshape(nchan, 1) * yhat
+    a_minus_a_dot_yhat_yhat = a - a_dot_yhat_yhat
+    a_minus_a_dot_yhat_yhat_mag = np.linalg.norm(a_minus_a_dot_yhat_yhat, axis=1)
+    arg1 = np.dot(a_minus_a_dot_yhat_yhat, zhat) / a_minus_a_dot_yhat_yhat_mag
+    arg1[arg1 > 1.] = 1.                              # remove floating point errors
+    ang1 = np.sign(a_dot_xhat) * np.arccos(arg1)      # (nchan)
+
+    # Find angle in yhat, zhat plane
+    a_dot_xhat = np.sum(a * xhat.reshape(1, 3), axis=1)
+    a_dot_xhat_xhat = a_dot_xhat.reshape(nchan, 1) * xhat
+    a_minus_a_dot_xhat_xhat = a - a_dot_xhat_xhat
+    a_minus_a_dot_xhat_xhat_mag = np.linalg.norm(a_minus_a_dot_xhat_xhat, axis=1)
+    arg2 = np.dot(a_minus_a_dot_xhat_xhat, zhat) / a_minus_a_dot_xhat_xhat_mag
+    arg2[arg2 > 1.] = 1.                             # remove floating point errors
+    ang2 = np.sign(a_dot_yhat) * np.arccos(arg2)     # (nchan)
+
+    return np.array([ang1, ang2]).T     # (nchan, 2)
+
+def project_image(axis=None,
+                  lens=None,
+                  data=None,
+                  beam_pt=None,
+                  beam_axis=None):
+    """Given several lines of sight and an intensity per LOS, project an image on a plane perpendicular
+    to the average LOS axis. USES ANGLES FOUND IN A GENERAL WAY
+
+    Let the normalized, average LOS be :math:`\\hat{z}`, the lens position to be point :math:`\\vec{O}`, and a point in
+    question be :math:`\\vec{P}`. Let :math:`\\vec{a}=\\vec{P}-\\vec{O}`.
+
+    Parameters
+    ----------
+    axis : array (nchan, 3)
+        Normalized axis vectors defining LOS
+
+    lens : array (3)
+        Common location for all LOS (aperture or lens)
 
     data : array (nchan)
         Data to be projected
 
+    beam_pt : array (3)
+        A point on the beam centerline
+
+    beam_axis : array (3)
+        Vector along beam centerline
+
     Returns
     -------
-    x1_grid : float array (100, 101)
-        Relative coordinates for grid_data (perpendicular to average LOS axis)
+    x1 : array (100)
+        Relative coordinates for grid_data (angle (deg) perpendicular to average LOS axis)
 
-    x2_grid : float array (100, 101)
-        Second set of relative coordinates for grid_data (perpendicular to average LOS axis)
+    x2 : array (101)
+        Second set of relative coordinates for grid_data (angle (deg) perpendicular to average LOS axis)
 
-    grid_data : float array (100, 101)
-        data interpolated onto a uniform grid on a plane perpendicular to the average LOS axis and
-        projection_dist from the aperature
+    grid_data : array (100, 101)
+        Data interpolated onto a uniform grid on a plane perpendicular to the average LOS axis
 
-    valid_ic : int array (<=nchan)
-        Indeces (relative to an (nchan) array) indicating which LOS made a valid projection
+    beam_pt1 : array (2)
+        Beam coordinates in 2-angle space for 1st beam point
+
+    beam_pt2 : array (2)
+        Beam coordinates in 2-angle space for 2nd beam point
 
     Todo
     ----
-    * Generalize with points (nchan, 3) distinct for each LOS
+    * Choose x or yhat to consistantly be the one that is more parallel to beam axis. Could do by crossing
+      beam_axis instead of any_vec.
     """
-    avg_los_axis = axes.mean(0)           # (3)
-    nchan = axes.shape[0]
+    # Average LOS axis
+    zhat = axis.mean(0)
+    zhat = zhat / np.linalg.norm(zhat)  # (3)
 
-    # Find point projection_dist along lens axis (ie point on plane pierced by lens axis line)
-    t = np.sqrt(projection_dist ** 2 / np.sum(avg_los_axis ** 2))
-    plane_pt1 = aperture + avg_los_axis * t
+#    # Find any vector perp to zhat (by crossing w/ any non-colinear vector) to define the plane
+#    any_vec = np.array([zhat[0] + 5., zhat[1], zhat[2]])   # 5. is arbitrary
+#    xhat = np.cross(zhat, any_vec)
+#    xhat = xhat / np.linalg.norm(xhat)
+#
+#    # Find second plane vector perp to first
+#    yhat = np.cross(zhat, xhat)  # (3)
 
-    # Find any vector perp to avg_los_axis (by crossing w/ any non-colinear vector) to define the plane
-    any_vec = np.array([avg_los_axis[0] + 5., avg_los_axis[1], avg_los_axis[2]])   # 5. is arbitrary
-    plane_vec1 = np.cross(avg_los_axis, any_vec)
+    # Get unit vector perp to beam
+    yhat = np.cross(zhat, beam_axis) / np.linalg.norm(beam_axis)
 
-    # Find second plane vector
-    plane_vec2 = np.cross(avg_los_axis, plane_vec1)
+    # Get unit vector along beam
+    xhat = np.cross(yhat, zhat)
 
-    # Find two more points to define plane
-    plane_pt2 = plane_pt1 + plane_vec1 * 5.         # 5. is arbitrary
-    plane_pt3 = plane_pt1 + plane_vec2 * 5.         # 5. is arbitrary
+    # Get angles along xhat and yhat for LOS
+    angs = to_angle_space(axis, xhat, yhat, zhat)    # (nchan, 2)
 
-    # Step thru each LOS and find intersection with plane (call them 'target' points)
-    target = list()         # locations where LOS hit projection plane
-    valid_ic = list()       # indeces (relative to (nchan) array) where LOS makes valid projection
-    for ic in range(nchan):
-        res = intersect_line_plane(plane_pt1, plane_pt2, plane_pt3, aperture, axes[ic, :])
-
-        if res is None:
-            print('Warning: LOS {}, does not intersect projection plane. Ignoring'.format(ic))
-        elif len(res) == 2:
-            print('Warning: LOS {} lies in projection plane. Ignoring'.format(ic))
-        elif len(res) == 3:
-            # Intersection is a point
-            target.append(res)
-            valid_ic.append(ic)
-
-    target = np.array(target)       # (nvalid, 3), all on plane perp to avg_los_axis
-
-    # Remove channels that wont be imaged
-    data = data[valid_ic]   # (nvalid)
-
-    # Rotate target locations into coord sys aligned with avg_los_axis
-    dis = np.sqrt(np.sum((aperture - plane_pt1) ** 2.0))
-    beta = np.arcsin((aperture[2] - plane_pt1[2]) / dis)
-    alpha = np.arctan2((plane_pt1[1] - aperture[1]), (plane_pt1[0] - aperture[0]))
-    gamma = 0.
-    target_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, target.T, origin=plane_pt1).T  # (nvalid, 3)
-
-    # Interpolate data onto uniform grid along target plane
+    # Interpolate data onto uniform grid of angles
     n1d = 100    # no. of grid points in each direction
-    x1 = np.linspace(target_rotated[:, 1].min(), target_rotated[:, 1].max(), num = n1d)
-    x2 = np.linspace(target_rotated[:, 2].min(), target_rotated[:, 2].max(), num = n1d + 1)
+    x1 = np.linspace(angs[:, 0].min(), angs[:, 0].max(), num = n1d)
+    x2 = np.linspace(angs[:, 1].min(), angs[:, 1].max(), num = n1d + 1)
     x1_grid, x2_grid = np.meshgrid(x1, x2, indexing='ij')
-    grid_data = interpolate.griddata(target_rotated[:, 1:3], data, (x1_grid, x2_grid), fill_value = 0.)
+    grid_data = interpolate.griddata(np.array([angs[:, 0], angs[:, 1]]).T, data, (x1_grid, x2_grid), fill_value=0.)
 
-    # Find two pts on beam centerline in mach coords
-    beam_pt1 = beam_src
-    beam_pt2 = beam_pt1 + beam_axis * 10.
+    # Pick two points on the beam centerline
+    beam_vecs = np.zeros((2, 3))
+    beam_vecs[0, :] = beam_pt - lens
+    beam_vecs[1, :] = beam_pt + beam_axis * 10. - lens
 
-    # Rotate beam to relative coords
-    beam_rotated = fs.preprocessing.uvw_to_xyz(alpha, beta, gamma, np.array([beam_pt1, beam_pt2]).T, origin=plane_pt1)  # (3, 2)
-    beam_rotated_pt1 = beam_rotated[1:3, 0]
-    beam_rotated_pt2 = beam_rotated[1:3, 1]
+    # Get angles along xhat and yhat for beam points
+    beam_angs = to_angle_space(beam_vecs, xhat, yhat, zhat)   # (2, 2) = (2-pts, 2-space)
 
-#    return x1_grid, x2_grid, grid_data, valid_ic
-    return x1, x2, grid_data, beam_rotated_pt1, beam_rotated_pt2 - beam_rotated_pt1
+    # Define beam centerline in angle coordinates and move beam points to edge of angle grid
+    beam_axis = np.squeeze(np.diff(beam_angs, axis=0))
+    if beam_axis[0] != 0.:
+        t1 = (x1.min() - beam_angs[0, 0]) / beam_axis[0]
+        t2 = (x1.max() - beam_angs[0, 0]) / beam_axis[0]
+    else:
+        t1 = -np.inf
+        t2 = np.inf
+    if beam_axis[1] != 0.:
+        t1_b = (x2.min() - beam_angs[0, 1]) / beam_axis[1]
+        t2_b = (x2.max() - beam_angs[0, 1]) / beam_axis[1]
+        t1 = np.max([t1, t1_b])
+        t2 = np.min([t2, t2_b])
+    beam_angs[0, :] = [beam_angs[0, 0] + beam_axis[0] * t1, beam_angs[0, 1] + beam_axis[1] * t1]
+    beam_angs[1, :] = [beam_angs[1, 0] + beam_axis[0] * t2, beam_angs[1, 1] + beam_axis[1] * t2]
+
+    return x1, x2, grid_data, beam_angs[0, :], beam_angs[1, :]
 
 def intersect_line_plane(plane_pt1, plane_pt2, plane_pt3, line_pt, line_axis):
         '''Calculate the intersection location between line and plane
@@ -293,9 +624,9 @@ def find_lenses(nchan, lens_loc):
 class Spectra:
     """ Spectra object that contains plot methods and parameters"""
     def __init__(self, nml):
-        dir = nml["result_dir"]
+        result_dir = nml["result_dir"]
         runid = nml["runid"]
-        spec_file = os.path.join(dir, runid+'_spectra.h5')
+        spec_file = os.path.join(result_dir, runid+'_spectra.h5')
         geo_file = nml["geometry_file"]
         self._has_spectra = os.path.isfile(spec_file)
         self._has_geo = os.path.isfile(geo_file)
@@ -334,7 +665,7 @@ class Spectra:
             self.halo_on_imaging = tk.BooleanVar(value = self.has_bes)
             self.fida_on_imaging = tk.BooleanVar(value = self.has_fida)
             self.brems_on_imaging = tk.BooleanVar(value = self.has_brems)
-            self.projection_dist = tk.StringVar(value = 100.)
+#            self.projection_dist = tk.StringVar(value = 100.)
 
             if self.has_brems:
                 self.brems = spec['brems']
@@ -475,33 +806,29 @@ class Spectra:
             w = (self.lam >= float(self.wl_min_imaging.get())) & (self.lam <= float(self.wl_max_imaging.get()))
             spec = integrate.simps(spec[:, w], x = self.lam[w], axis = 1)  # (this_nchan)
 
+            # Get all LOS vectors for this lens
             lens_axis = self.lens_axis[ch, :]           # (this_nchan, 3), all LOS axes for this lens
             lens_loc = self.lens_loc[ch[0], :]          # (3), same for all in ch
 
-#            yp_grid, zp_grid, grid_spec, valid_ic = project_image(float(self.projection_dist.get()), lens_axis, lens_loc, spec)
-            x1, x2, grid_spec, beam_pt, beam_axis = project_image(float(self.projection_dist.get()), lens_axis,
-                                                                  lens_loc, spec, self.beam_src, self.beam_axis)
-
-            # Find where beam hits edges of target plane (Assumes crosses left and right, not general solution)
-            t1 = (np.min(x1) - beam_pt[0]) / beam_axis[0]
-            t2 = (np.max(x1) - beam_pt[0]) / beam_axis[0]
-            beam_pt1 = beam_pt + beam_axis * t1
-            beam_pt2 = beam_pt + beam_axis * t2
+            # Project all LOS data onto 2D grid perpendicular to average LOS, a distance projection_dist from the lens
+            x1, x2, grid_spec, beam_pt1, beam_pt2 = project_image(axis=lens_axis,
+                                                                  lens=lens_loc,
+                                                                  data=spec,
+                                                                  beam_pt=self.beam_src,
+                                                                  beam_axis=self.beam_axis)
 
             # Plot contour
-#            c = ax.contourf(yp_grid, zp_grid, grid_spec, 50)
-            c = ax.contourf(x1, x2, grid_spec.T, 50)
+            c = ax.contourf(np.degrees(x1), np.degrees(x2), grid_spec.T, 50)
             cb = fig.colorbar(c)
             cb.ax.set_ylabel('[$Ph\ /\ (s\ sr\ m^2)$]')
             ax.set_title('Intensity\nLens at [{:4.0f},{:4.0f},{:4.0f}]'.format(lens_loc[0], lens_loc[1], lens_loc[2]))
-            ax.set_xlabel('X1 [cm]')
-            ax.set_ylabel('X2 [cm]')
+            ax.set_xlabel('X1 [deg.]')
+            ax.set_ylabel('X2 [deg.]')
 
             # Overplot beam centerline
-            ax.plot([beam_pt1[0], beam_pt2[0]], [beam_pt1[1], beam_pt2[1]], color = 'magenta')
-#            arr = plt.Arrow(beam_pt1[0], beam_pt1[1], 0.5, 0.5)
-#            ax.add_patch(arr)
-#            ax.arrow(beam_pt1[0], beam_pt1[1], 0.5, 0.5, head_width=0.05, head_length=0.1, fc='k', ec='k')
+#            beam_pt1 = np.degrees(beam_pt1)
+#            beam_pt2 = np.degrees(beam_pt2)
+#            ax.plot([beam_pt1[0], beam_pt2[0]], [beam_pt1[1], beam_pt2[1]], color = 'magenta')
             canvas.show()
         else:
             print('No spectra selected to plot')
@@ -563,11 +890,11 @@ class Spectra:
 class NPA:
     """ NPA object that contains plot methods and parameters"""
     def __init__(self, nml):
-        dir = nml["result_dir"]
+        result_dir = nml["result_dir"]
         runid = nml["runid"]
-        npa_file = os.path.join(dir,runid+'_npa.h5')
-        wght_file = os.path.join(dir,runid+'_npa_weights.h5')
-        neut_file = os.path.join(dir,runid+'_neutrals.h5')
+        npa_file = os.path.join(result_dir, runid + '_npa.h5')
+        wght_file = os.path.join(result_dir, runid + '_npa_weights.h5')
+        neut_file = os.path.join(result_dir, runid + '_neutrals.h5')
         geo_file = nml["geometry_file"]
 
         self._has_npa = os.path.isfile(npa_file)
@@ -648,10 +975,10 @@ class NPA:
 class Weights:
     """ Weights object that contains plot methods and parameters"""
     def __init__(self,nml):
-        dir = nml["result_dir"]
+        result_dir = nml["result_dir"]
         runid = nml["runid"]
-        npa_wght_file = os.path.join(dir,runid+'_npa_weights.h5')
-        fida_wght_file = os.path.join(dir,runid+'_fida_weights.h5')
+        npa_wght_file = os.path.join(result_dir,runid+'_npa_weights.h5')
+        fida_wght_file = os.path.join(result_dir,runid+'_fida_weights.h5')
 
         self._has_npa_wght = os.path.isfile(npa_wght_file)
         self._has_fida_wght = os.path.isfile(fida_wght_file)
@@ -715,9 +1042,9 @@ class Weights:
 class Neutrals:
     """ Neutrals object that contains plot methods and parameters"""
     def __init__(self, nml):
-        dir = nml["result_dir"]
+        result_dir = nml["result_dir"]
         runid = nml["runid"]
-        neut_file = os.path.join(dir,runid+'_neutrals.h5')
+        neut_file = os.path.join(result_dir,runid+'_neutrals.h5')
         geo_file = nml["geometry_file"]
 
         self._has_neut = os.path.isfile(neut_file)
@@ -932,33 +1259,94 @@ class Neutrals:
 
                 if pt == 'XY':
                     if self.use_mach_coords.get() and not self.beam_mach_same:
-                        # Use machine coords and they're not the same as beam coords (so must rebin)
-                        ax.set_xlabel('X [cm]')
-                        ax.set_ylabel('Y [cm]')
+                        use_histogram = True
 
-                        # Need to bin data onto mach regular grid before taking projections
-                        fdens_hist = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (self.nx, self.ny), weights=self.fdens.flatten())
-                        fdens = fdens_hist[0]
+                        if use_histogram is True:
+                            ###############################################
+                            # MAINTAIN ORIGINAL NUMBER OF POINTS
+                            ###############################################
 
-                        # Histogram returns edges of shape (nx+1). Convert to centers
-                        xedges = fdens_hist[1]
-                        yedges = fdens_hist[2]
-                        dx = xedges[1] - xedges[0]
-                        dy = yedges[1] - yedges[0]
-                        x = xedges[0:-1] + dx / 2.
-                        y = yedges[0:-1] + dy / 2.
+                            # Use machine coords and they're not the same as beam coords (so must rebin)
+                            ax.set_xlabel('X [cm]')
+                            ax.set_ylabel('Y [cm]')
 
-#                        x, y = np.meshgrid(x, y, indexing='ij')
+                            # Need to bin data onto mach regular grid before taking projections
+                            fdens_hist = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(),
+                                                        bins = (self.nx, self.ny), weights=self.fdens.flatten())
+                            fdens = fdens_hist[0]
 
-                        hdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.hdens.flatten())[0]
-                        tdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.tdens.flatten())[0]
-                        halodens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(), bins = (xedges, yedges), weights=self.halodens.flatten())[0]
+                            # Histogram returns edges of shape (nx+1). Convert to centers
+                            xedges = fdens_hist[1]
+                            yedges = fdens_hist[2]
+                            dx = xedges[1] - xedges[0]
+                            dy = yedges[1] - yedges[0]
+                            x = xedges[0:-1] + dx / 2.
+                            y = yedges[0:-1] + dy / 2.
 
-                        # histogram2d sums weights, need mean
-                        fdens = fdens / self.nz
-                        hdens = hdens / self.nz
-                        tdens = tdens / self.nz
-                        halodens = halodens / self.nz
+                            hdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(),
+                                                   bins = (xedges, yedges), weights=self.hdens.flatten())[0]
+                            tdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(),
+                                                   bins = (xedges, yedges), weights=self.tdens.flatten())[0]
+                            halodens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(),
+                                                      bins = (xedges, yedges), weights=self.halodens.flatten())[0]
+
+                            # histogram2d sums weights, need mean
+                            fdens = fdens / self.nz
+                            hdens = hdens / self.nz
+                            tdens = tdens / self.nz
+                            halodens = halodens / self.nz
+
+#                            print('original dx {}'.format((self.x_grid[1, 0, 0] - self.x_grid[0, 0, 0]) * (self.y_grid[0, 1, 0] - self.y_grid[0, 0, 0])))
+#                            print('new dx {}'.format(dx * dy))
+
+                            ###############################################
+                            # MAINTAIN ORIGINAL RESOLUTION
+                            ###############################################
+
+#                            # Use machine coords and they're not the same as beam coords (so must rebin)
+#                            ax.set_xlabel('X [cm]')
+#                            ax.set_ylabel('Y [cm]')
+#
+#                            dx = np.abs(self.x_grid[1, 0, 0] - self.x_grid[0, 0, 0])
+#                            dy = np.abs(self.y_grid[0, 1, 0] - self.y_grid[0, 0, 0])
+#                            xmin, xmax = self.x_grid.min(), self.x_grid.max()
+#                            ymin, ymax = self.y_grid.min(), self.y_grid.max()
+#                            nx = np.floor((xmax - xmin) / dx) + 1
+#                            ny = np.floor((ymax - ymin) / dy) + 1
+#                            x = np.linspace(xmin, xmax, num=nx)
+#                            y = np.linspace(ymin, ymax, num=ny)
+#                            xedges = x - dx / 2.
+#                            yedges = y - dx / 2.
+#                            xedges = np.append(xedges, xedges[-1] + dx)
+#                            yedges = np.append(yedges, yedges[-1] + dy)
+#
+#                            # Need to bin data onto mach regular grid before taking projections
+#                            fdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(),
+#                                                        bins = (xedges, yedges), weights=self.fdens.flatten())[0]
+#                            hdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(),
+#                                                   bins = (xedges, yedges), weights=self.hdens.flatten())[0]
+#                            tdens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(),
+#                                                   bins = (xedges, yedges), weights=self.tdens.flatten())[0]
+#                            halodens = np.histogram2d(self.x_grid.flatten(), self.y_grid.flatten(),
+#                                                      bins = (xedges, yedges), weights=self.halodens.flatten())[0]
+#
+#                            # histogram2d sums weights, need mean
+#                            fdens = fdens / self.nz
+#                            hdens = hdens / self.nz
+#                            tdens = tdens / self.nz
+#                            halodens = halodens / self.nz
+                        else:
+                            # Use KDE
+                            x = np.linspace(self.x_grid.min(), self.x_grid.max(), self.nx)
+                            y = np.linspace(self.y_grid.min(), self.y_grid.max(), self.ny)
+                            xx, yy = np.meshgrid(x, y)
+                            fdens = np.zeros((3, np.max(self.fdens.shape)))  # make (ndims, ndata)
+                            fdens[0, 0:self.nx] = self.fdens[:, 0, 0]
+                            fdens[1, 0:self.ny] = self.fdens[0, :, 0]
+                            fdens[2, 0:self.nz] = self.fdens[0, 0, :]
+                            pdf = gaussian_kde(fdens, weights=fdens)
+                            fdens = pdf((np.ravel(xx), np.ravel(yy)))
+                            fdens = np.reshape(fdens, xx.shape)
                     else:
                         # Use data as is for beam coords or when coord systems are the same
                         x = self.x_grid_beam[:, 0, 0]
@@ -1313,8 +1701,8 @@ class Viewer:
             ttk.Button(self.imaging_frame, text = 'Plot Brems',\
             	        command = (lambda: self.spec.plot_brems_image(self.fig, self.canvas))).pack(side = tk.TOP, expand = tk.Y, fill = tk.BOTH)
 
-            ttk.Label(self.imaging_frame, text = 'Projection Distance (cm)').pack()
-            ttk.Entry(self.imaging_frame, textvariable = self.spec.projection_dist, state = tk.NORMAL, width = 10).pack()
+#            ttk.Label(self.imaging_frame, text = 'Projection Distance (cm)').pack()
+#            ttk.Entry(self.imaging_frame, textvariable = self.spec.projection_dist, state = tk.NORMAL, width = 10).pack()
         else:
             ttk.Label(self.imaging_frame, text = '\n\nNo imaging data found').pack()
 
